@@ -1108,7 +1108,7 @@ CRITICAL RULES:
                             top_genres=top_genres,
                             favorited_songs=favorited_songs,
                             low_rated_songs=low_rated_songs,
-                            playlist_name=playlist_name 
+                            playlist_name=playlist_name
                         )
                         if hybrid_songs:
                             self.create_playlist(playlist_name, hybrid_songs, max_songs=30)
