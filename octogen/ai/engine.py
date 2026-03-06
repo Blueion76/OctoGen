@@ -267,6 +267,59 @@ class AIRecommendationEngine:
         # Note: We don't delete call tracker to preserve daily limit
         logger.info("Cache invalidation complete")
 
+    def _load_recent_songs(self) -> set:
+        """Load recently recommended songs from disk.
+        
+        Returns:
+            Set of "artist - title" strings from recent runs, or empty set on failure.
+        """
+        recent_file = self.data_dir / "recent_playlist_songs.json"
+        try:
+            if recent_file.exists():
+                with open(recent_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return set(data)
+        except Exception as e:
+            logger.warning("Could not load recent songs: %s", str(e)[:100])
+        return set()
+
+    def _save_recent_songs(self, songs: list) -> None:
+        """Save recently recommended songs to disk (capped at 200 entries across last 2 runs).
+
+        The file is written atomically (temp file + os.replace) so an interrupted
+        write never leaves a corrupt or empty file on disk.
+
+        Args:
+            songs: List of song dicts with "artist" and "title" keys from the new playlists.
+        """
+        recent_file = self.data_dir / "recent_playlist_songs.json"
+        try:
+            existing = self._load_recent_songs()
+            new_entries = [
+                f"{s.get('artist', '')} - {s.get('title', '')}"
+                for s in songs
+                if s.get('artist') and s.get('title')
+            ]
+            # Build ordered list: existing first (oldest), new entries appended last
+            # so that truncation with [-200:] always keeps the most recent songs.
+            seen: set = set()
+            ordered: list = []
+            for entry in list(existing) + new_entries:
+                if entry not in seen:
+                    seen.add(entry)
+                    ordered.append(entry)
+            # Cap at 200 entries (approximately 2 runs worth); drop oldest first
+            combined = ordered[-200:]
+            # Atomic write: write to a sibling temp file then replace
+            tmp_file = recent_file.with_suffix(".json.tmp")
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(combined, f, ensure_ascii=False)
+            os.replace(tmp_file, recent_file)
+            logger.info("Saved %d recent songs to disk (%d total)", len(new_entries), len(combined))
+        except Exception as e:
+            logger.warning("Could not save recent songs: %s", str(e)[:100])
+
     def _build_cached_context(
         self,
         top_artists: List[str],
@@ -285,13 +338,14 @@ class AIRecommendationEngine:
         Returns:
             Context string for AI
         """
-        artist_list = ", ".join(top_artists[:10])
-        genre_list = ", ".join(top_genres[:6])
+        artist_list = ", ".join(random.sample(top_artists[:20], min(10, len(top_artists[:20]))))
+        genre_list = ", ".join(random.sample(top_genres[:12], min(6, len(top_genres[:12]))))
 
-        # Limit context for memory efficiency
+        # Randomly sample a subset for variety — avoids O(n) shuffle of the full library
+        k = min(self.max_context_songs, len(favorited_songs))
         favorited_sample = [
             f"{s.get('artist','')} - {s.get('title','')}"
-            for s in favorited_songs[: self.max_context_songs]
+            for s in random.sample(favorited_songs, k)
         ]
         favorited_context = "\n".join(favorited_sample)
 
@@ -392,12 +446,18 @@ Use songs from this library for "library songs" and recommend NEW similar songs.
         logger.info("Cache created: %s (expires in 24 hours)", cached_content.name)
         return cached_content
 
-    def _build_task_prompt(self, top_genres: List[str], time_context: Optional[Dict[str, str]] = None) -> str:
+    def _build_task_prompt(
+        self,
+        top_genres: List[str],
+        time_context: Optional[Dict[str, str]] = None,
+        recent_songs: Optional[set] = None,
+    ) -> str:
         """Build the task-specific prompt with optional time-of-day awareness.
         
         Args:
             top_genres: List of top genres
             time_context: Optional time-of-day context from get_time_context()
+            recent_songs: Optional set of recently recommended "artist - title" strings to avoid
             
         Returns:
             Task prompt string
@@ -411,7 +471,11 @@ Use songs from this library for "library songs" and recommend NEW similar songs.
                 f'{i+2}. "Daily Mix {i+1}" (30 songs, genre: {genre_name}): 25 library + 5 new'
             )
 
-        variety_seed = random.randint(1000, 9999)
+        variety_seed = random.randint(100000, 999999)  # 6-digit range reduces collision probability across runs
+
+        # Pick a random decade bias hint for added variety
+        decade_hints = ["1970s", "1980s", "1990s", "2000s", "2010s", "2020s", "Mix of all eras"]
+        decade_hint = random.choice(decade_hints)
         
         # Add time-of-day context if provided
         time_guidance = ""
@@ -426,6 +490,16 @@ Guidance: {time_context.get('guidance', '')}
 Apply this context when selecting NEW songs to match the current time of day.
 """
 
+        # Add recently recommended songs section if provided
+        recent_songs_section = ""
+        if recent_songs:
+            sample_size = min(40, len(recent_songs))
+            recent_sample = random.sample(sorted(recent_songs), sample_size)
+            recent_songs_section = f"""
+RECENTLY RECOMMENDED (avoid repeating these):
+{chr(10).join(recent_sample)}
+"""
+
         return f"""Generate exactly 11 playlists (Variety Seed: {variety_seed}):
 
 1. "Discovery" (50 songs): 45 new discoveries + 5 library
@@ -434,7 +508,8 @@ Apply this context when selecting NEW songs to match the current time of day.
 9. "Workout Energy" (30 songs): 25 library + 5 new high-energy
 10. "Focus Flow" (30 songs): 25 library + 5 new ambient/instrumental
 11. "Drive Time" (30 songs): 25 library + 5 new upbeat
-{time_guidance}
+Decade focus: {decade_hint} — lean toward this era for new discoveries
+{time_guidance}{recent_songs_section}
 Respond ONLY with a valid JSON array of objects, each with "artist" and "title" fields, using double quotes.
 
 {{
@@ -454,6 +529,9 @@ CRITICAL RULES:
 - ESCAPE ALL BACKSLASHES: Use \\\\ not \\
 - If song title has backslash, use double backslash
 - Example: "AC\\\\DC" not "AC\\DC"
+- Maximize variety: no artist should appear more than 2 times per playlist
+- Each playlist MUST have a different set of songs - NO song should appear in more than one playlist
+- Prioritize LESS POPULAR and DEEPER CUTS over well-known hits
 """
 
     def _generate_with_gemini(
@@ -483,7 +561,8 @@ CRITICAL RULES:
         if time_context:
             logger.info(f"🕐 Time context: {time_context.get('description')} - {time_context.get('mood')}")
         
-        prompt = self._build_task_prompt(top_genres, time_context)
+        recent_songs = self._load_recent_songs()
+        prompt = self._build_task_prompt(top_genres, time_context, recent_songs)
 
         # Set thinking budget
         thinking_budget = 5000
@@ -559,7 +638,8 @@ CRITICAL RULES:
         if time_context:
             logger.info(f"🕐 Time context: {time_context.get('description')} - {time_context.get('mood')}")
         
-        task_prompt = self._build_task_prompt(top_genres, time_context)
+        recent_songs = self._load_recent_songs()
+        task_prompt = self._build_task_prompt(top_genres, time_context, recent_songs)
         full_prompt = f"{cached_context}\n\n{task_prompt}"
 
         response = self.client.chat.completions.create(
@@ -729,6 +809,11 @@ CRITICAL RULES:
         self._record_ai_call()
         total = sum(len(songs) for songs in all_playlists.values())
         logger.info("Generated %d playlists (%d songs)", len(all_playlists), total)
+
+        # Persist all new songs for cross-run deduplication
+        all_new_songs = [song for songs in all_playlists.values() for song in songs]
+        self._save_recent_songs(all_new_songs)
+
         return all_playlists, None
             
     def _generate_with_retry(self, generate_func, *args, **kwargs) -> str:

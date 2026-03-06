@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import logging
+import random
 import time
 import argparse
 import asyncio
@@ -813,6 +814,7 @@ class OctoGenEngine:
         )
         
         songs.extend(llm_songs)
+        random.shuffle(songs)
         
         logger.info(f"🤖 {label}: Got {len(llm_songs)} songs from LLM")
         logger.info(f"🎵 {label}: Total {len(songs)} songs (AudioMuse: {audiomuse_actual_count}, LLM: {len(llm_songs)})")
@@ -841,15 +843,16 @@ class OctoGenEngine:
             List of song dicts: [{"artist": "...", "title": "..."}]
         """
         # Build a focused prompt for this specific daily mix
-        artist_list = ", ".join(top_artists[:10])
-        genre_list = ", ".join(top_genres[:6])
+        artist_list = ", ".join(random.sample(top_artists[:20], min(10, len(top_artists[:20]))))
+        genre_list = ", ".join(random.sample(top_genres[:12], min(6, len(top_genres[:12]))))
         
-        # Sample of favorited songs for context
+        # Randomly sample a 20-song context window — avoids O(n) shuffle of the full library
+        k = min(20, len(favorited_songs))
         favorited_sample = [
             f"{s.get('artist','')} - {s.get('title','')}"
-            for s in favorited_songs[:50]  # Smaller sample for individual mix
+            for s in random.sample(favorited_songs, k)
         ]
-        favorited_context = "\n".join(favorited_sample[:20])  # Limit to 20 for focused prompt
+        favorited_context = "\n".join(favorited_sample)
         
         negative_context = ""
         if low_rated_songs:
@@ -1324,7 +1327,7 @@ CRITICAL RULES:
                         try:
                             if favorited_songs:
                                 # Use random seed from favorited songs
-                                seed_song = favorited_songs[len(favorited_songs) // 2]
+                                seed_song = random.choice(favorited_songs)
                                 # Build a natural language request for AudioMuse
                                 mood = time_context.get("mood", "")
                                 request_text = f"{mood} music similar to {seed_song.get('title', '')} by {seed_song.get('artist', '')}"
