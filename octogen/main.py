@@ -745,7 +745,7 @@ class OctoGenEngine:
         # Get songs from AudioMuse-AI if enabled
         audiomuse_actual_count = 0
         if self.audiomuse_client:
-            logger.debug(f"Requesting {audiomuse_songs_count} songs from AudioMuse-AI for Daily Mix {mix_number}")
+            logger.debug(f"Requesting {audiomuse_songs_count} songs from AudioMuse-AI for {label}")
             # --- Begin multi-version prompt logic ---
             modifiers = characteristics.split() if characteristics else []
             prompt_variants = []
@@ -796,7 +796,7 @@ class OctoGenEngine:
                 logger.info(f"🔄 AudioMuse returned {audiomuse_actual_count}/{audiomuse_songs_count} songs, "
                             f"requesting {num_llm_songs} from LLM (includes {buffer} song buffer)")
         
-        logger.debug(f"Requesting {num_llm_songs} songs from LLM for Daily Mix {mix_number}")
+        logger.debug(f"Requesting {num_llm_songs} songs from LLM for {label}")
         # We'll use the AI engine to generate just the LLM portion
         llm_songs = self._generate_llm_songs_for_daily_mix(
             mix_number=mix_number,
@@ -1500,9 +1500,9 @@ CRITICAL RULES:
             self._record_successful_run()
     
         except Exception as e:
-           write_health_status(BASE_DIR, "unhealthy", f"Error: {str(e)[:200]}")
-           logger.error("Fatal error: %s", e, exc_info=True)
-           sys.exit(1)
+            write_health_status(BASE_DIR, "unhealthy", f"Error: {str(e)[:200]}")
+            logger.error("Fatal error: %s", e, exc_info=True)
+            sys.exit(1)
 
 
 # ============================================================================
