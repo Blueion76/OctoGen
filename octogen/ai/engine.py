@@ -341,14 +341,11 @@ class AIRecommendationEngine:
         artist_list = ", ".join(random.sample(top_artists[:20], min(10, len(top_artists[:20]))))
         genre_list = ", ".join(random.sample(top_genres[:12], min(6, len(top_genres[:12]))))
 
-        # Shuffle before slicing for variety across calls
-        shuffled_songs = favorited_songs.copy()
-        random.shuffle(shuffled_songs)
-
-        # Limit context for memory efficiency
+        # Randomly sample a subset for variety — avoids O(n) shuffle of the full library
+        k = min(self.max_context_songs, len(favorited_songs))
         favorited_sample = [
             f"{s.get('artist','')} - {s.get('title','')}"
-            for s in shuffled_songs[: self.max_context_songs]
+            for s in random.sample(favorited_songs, k)
         ]
         favorited_context = "\n".join(favorited_sample)
 
@@ -632,11 +629,8 @@ CRITICAL RULES:
         Returns:
             JSON response string
         """
-        # Shuffle for per-call variety (mirrors what Gemini does at cache creation time)
-        shuffled_songs = favorited_songs.copy()
-        random.shuffle(shuffled_songs)
         cached_context = self._build_cached_context(
-            top_artists, top_genres, shuffled_songs, low_rated_songs
+            top_artists, top_genres, favorited_songs, low_rated_songs
         )
 
         # Get time-of-day context

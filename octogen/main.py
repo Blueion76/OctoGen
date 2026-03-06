@@ -846,13 +846,11 @@ class OctoGenEngine:
         artist_list = ", ".join(random.sample(top_artists[:20], min(10, len(top_artists[:20]))))
         genre_list = ", ".join(random.sample(top_genres[:12], min(6, len(top_genres[:12]))))
         
-        # Shuffle and randomly sample a 20-song context window for variety
-        # (shuffling first, then slicing avoids always drawing from the same head of the list)
-        shuffled_songs = favorited_songs.copy()
-        random.shuffle(shuffled_songs)
+        # Randomly sample a 20-song context window — avoids O(n) shuffle of the full library
+        k = min(20, len(favorited_songs))
         favorited_sample = [
             f"{s.get('artist','')} - {s.get('title','')}"
-            for s in shuffled_songs[:20]
+            for s in random.sample(favorited_songs, k)
         ]
         favorited_context = "\n".join(favorited_sample)
         
