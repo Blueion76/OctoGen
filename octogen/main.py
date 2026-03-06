@@ -11,7 +11,6 @@ import logging
 import random
 import time
 import argparse
-import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,7 +34,6 @@ from octogen.api.lastfm import LastFMAPI
 from octogen.api.listenbrainz import ListenBrainzAPI
 from octogen.api.audiomuse import AudioMuseClient
 from octogen.ai.engine import AIRecommendationEngine
-from octogen.config import load_config_from_env
 from octogen.models.tracker import ServiceTracker, RunTracker
 from octogen.web.health import write_health_status
 from octogen.scheduler.cron import calculate_next_run, wait_until, calculate_cron_interval
@@ -467,7 +465,7 @@ class OctoGenEngine:
                     'last_run_timestamp': now.isoformat(),
                     'last_run_date': now.strftime("%Y-%m-%d"),
                     'last_run_formatted': now.strftime("%Y-%m-%d %H:%M:%S"),
-                    'next_scheduled_run': next_scheduled_run,  # ✅ Added this!
+                    'next_scheduled_run': next_scheduled_run,
                     'services': services_data
                 }, f, indent=2)
             logger.info("✓ Recorded successful run timestamp with service tracking")
@@ -599,7 +597,7 @@ class OctoGenEngine:
     
                 artist = (rec.get("artist") or "").strip()
                 title = (rec.get("title") or "").strip()
-                mbid = rec.get("mbid")  # <-- NEW
+                mbid = rec.get("mbid")
     
                 if not artist or not title:
                     continue
@@ -697,8 +695,6 @@ class OctoGenEngine:
     
         return song_ids[:max_songs]
 
-
-
     def create_playlist(self, name: str, recommendations: List[Dict],
                        max_songs: int = 100) -> None:
         """Create a playlist from recommendations."""
@@ -740,6 +736,7 @@ class OctoGenEngine:
             List of song dicts: [{"artist": "...", "title": "..."}]
         """
         songs = []
+        label = f"Daily Mix {mix_number}" if mix_number in [1,2,3,4,5,6] else playlist_name
         
         # Get configuration
         audiomuse_songs_count = self.config["audiomuse"]["songs_per_mix"]
@@ -748,7 +745,7 @@ class OctoGenEngine:
         # Get songs from AudioMuse-AI if enabled
         audiomuse_actual_count = 0
         if self.audiomuse_client:
-            logger.debug(f"Requesting {audiomuse_songs_count} songs from AudioMuse-AI for Daily Mix {mix_number}")
+            logger.debug(f"Requesting {audiomuse_songs_count} songs from AudioMuse-AI for {label}")
             # --- Begin multi-version prompt logic ---
             modifiers = characteristics.split() if characteristics else []
             prompt_variants = []
@@ -783,7 +780,6 @@ class OctoGenEngine:
                     break
             songs.extend(audiomuse_collected)
             audiomuse_actual_count = len(audiomuse_collected)
-            label = f"Daily Mix {mix_number}" if mix_number in [1,2,3,4,5,6] else playlist_name
             logger.info(f"📻 {label}: Got {audiomuse_actual_count} songs from AudioMuse-AI")
             if audiomuse_actual_count < audiomuse_songs_count:
                 logger.debug(f"AudioMuse returned fewer songs than requested ({audiomuse_actual_count}/{audiomuse_songs_count})")
@@ -800,7 +796,7 @@ class OctoGenEngine:
                 logger.info(f"🔄 AudioMuse returned {audiomuse_actual_count}/{audiomuse_songs_count} songs, "
                             f"requesting {num_llm_songs} from LLM (includes {buffer} song buffer)")
         
-        logger.debug(f"Requesting {num_llm_songs} songs from LLM for Daily Mix {mix_number}")
+        logger.debug(f"Requesting {num_llm_songs} songs from LLM for {label}")
         # We'll use the AI engine to generate just the LLM portion
         llm_songs = self._generate_llm_songs_for_daily_mix(
             mix_number=mix_number,
@@ -1076,69 +1072,69 @@ CRITICAL RULES:
                 sys.exit(1)
     
             if should_generate_regular and all_playlists:
-                    # Handle hybrid playlists if AudioMuse is enabled
-                    if self.audiomuse_client:
-                        logger.info("=" * 70)
-                        logger.info("GENERATING HYBRID PLAYLISTS (AudioMuse + LLM)")
-                        logger.info("=" * 70)
-                        
-                        playlists_before_audiomuse = self.stats["playlists_created"]
-                        
-                        # Define all hybrid playlist configurations (everything except Discovery)
-                        hybrid_playlist_configs = [
-                            # Daily Mixes (num 1-6)
-                            {"name": "Daily Mix 1", "genre": top_genres[0] if len(top_genres) > 0 else DEFAULT_DAILY_MIX_GENRES[0], "characteristics": "energetic", "num": 1},
-                            {"name": "Daily Mix 2", "genre": top_genres[1] if len(top_genres) > 1 else DEFAULT_DAILY_MIX_GENRES[1], "characteristics": "catchy upbeat", "num": 2},
-                            {"name": "Daily Mix 3", "genre": top_genres[2] if len(top_genres) > 2 else DEFAULT_DAILY_MIX_GENRES[2], "characteristics": "danceable rhythmic", "num": 3},
-                            {"name": "Daily Mix 4", "genre": top_genres[3] if len(top_genres) > 3 else DEFAULT_DAILY_MIX_GENRES[3], "characteristics": "rhythmic bass-heavy", "num": 4},
-                            {"name": "Daily Mix 5", "genre": top_genres[4] if len(top_genres) > 4 else DEFAULT_DAILY_MIX_GENRES[4], "characteristics": "alternative atmospheric", "num": 5},
-                            {"name": "Daily Mix 6", "genre": top_genres[5] if len(top_genres) > 5 else DEFAULT_DAILY_MIX_GENRES[5], "characteristics": "smooth melodic", "num": 6},
-                            # Mood/Activity playlists (no num)
-                            {"name": "Chill Vibes", "genre": "ambient", "characteristics": "relaxing calm peaceful", "num": None},
-                            {"name": "Workout Energy", "genre": "high-energy", "characteristics": "upbeat motivating intense", "num": None},
-                            {"name": "Focus Flow", "genre": "instrumental", "characteristics": "ambient atmospheric concentration", "num": None},
-                            {"name": "Drive Time", "genre": "upbeat", "characteristics": "driving energetic feel-good", "num": None}
-                        ]
-                        
-                        # Generate and create hybrid playlists
-                        for mix_config in hybrid_playlist_configs:
-                            playlist_name = mix_config["name"]
-                            mix_number = mix_config.get("num")
-                            hybrid_songs = self._generate_hybrid_daily_mix(
-                                mix_number=mix_number,
-                                genre_focus=mix_config["genre"],
-                                characteristics=mix_config["characteristics"],
-                                top_artists=top_artists,
-                                top_genres=top_genres,
-                                favorited_songs=favorited_songs,
-                                low_rated_songs=low_rated_songs,
-                                playlist_name=playlist_name 
-                            )
-                            if hybrid_songs:
-                                self.create_playlist(playlist_name, hybrid_songs, max_songs=30)
-                        
-                        # Track AudioMuse service
-                        audiomuse_playlists = self.stats["playlists_created"] - playlists_before_audiomuse
-                        self.service_tracker.record(
-                            "audiomuse",
-                            success=True,
-                            playlists=audiomuse_playlists
+                # Handle hybrid playlists if AudioMuse is enabled
+                if self.audiomuse_client:
+                    logger.info("=" * 70)
+                    logger.info("GENERATING HYBRID PLAYLISTS (AudioMuse + LLM)")
+                    logger.info("=" * 70)
+                    
+                    playlists_before_audiomuse = self.stats["playlists_created"]
+                    
+                    # Define all hybrid playlist configurations (everything except Discovery)
+                    hybrid_playlist_configs = [
+                        # Daily Mixes (num 1-6)
+                        {"name": "Daily Mix 1", "genre": top_genres[0] if len(top_genres) > 0 else DEFAULT_DAILY_MIX_GENRES[0], "characteristics": "energetic", "num": 1},
+                        {"name": "Daily Mix 2", "genre": top_genres[1] if len(top_genres) > 1 else DEFAULT_DAILY_MIX_GENRES[1], "characteristics": "catchy upbeat", "num": 2},
+                        {"name": "Daily Mix 3", "genre": top_genres[2] if len(top_genres) > 2 else DEFAULT_DAILY_MIX_GENRES[2], "characteristics": "danceable rhythmic", "num": 3},
+                        {"name": "Daily Mix 4", "genre": top_genres[3] if len(top_genres) > 3 else DEFAULT_DAILY_MIX_GENRES[3], "characteristics": "rhythmic bass-heavy", "num": 4},
+                        {"name": "Daily Mix 5", "genre": top_genres[4] if len(top_genres) > 4 else DEFAULT_DAILY_MIX_GENRES[4], "characteristics": "alternative atmospheric", "num": 5},
+                        {"name": "Daily Mix 6", "genre": top_genres[5] if len(top_genres) > 5 else DEFAULT_DAILY_MIX_GENRES[5], "characteristics": "smooth melodic", "num": 6},
+                        # Mood/Activity playlists (no num)
+                        {"name": "Chill Vibes", "genre": "ambient", "characteristics": "relaxing calm peaceful", "num": None},
+                        {"name": "Workout Energy", "genre": "high-energy", "characteristics": "upbeat motivating intense", "num": None},
+                        {"name": "Focus Flow", "genre": "instrumental", "characteristics": "ambient atmospheric concentration", "num": None},
+                        {"name": "Drive Time", "genre": "upbeat", "characteristics": "driving energetic feel-good", "num": None}
+                    ]
+                    
+                    # Generate and create hybrid playlists
+                    for mix_config in hybrid_playlist_configs:
+                        playlist_name = mix_config["name"]
+                        mix_number = mix_config.get("num")
+                        hybrid_songs = self._generate_hybrid_daily_mix(
+                            mix_number=mix_number,
+                            genre_focus=mix_config["genre"],
+                            characteristics=mix_config["characteristics"],
+                            top_artists=top_artists,
+                            top_genres=top_genres,
+                            favorited_songs=favorited_songs,
+                            low_rated_songs=low_rated_songs,
+                            playlist_name=playlist_name
                         )
-                        logger.info("AudioMuse-AI service succeeded: %d playlists", audiomuse_playlists)
-                        
-                        # Create Discovery from AI response (LLM-only for new discoveries)
-                        if "Discovery" in all_playlists:
-                            discovery_songs = all_playlists["Discovery"]
-                            if isinstance(discovery_songs, list) and discovery_songs:
-                                logger.info("=" * 70)
-                                logger.info("DISCOVERY (LLM-only for new discoveries)")
-                                logger.info("=" * 70)
-                                self.create_playlist("Discovery", discovery_songs, max_songs=50)
-                    else:
-                        # Original behavior: use all AI-generated playlists
-                        for playlist_name, songs in all_playlists.items():
-                            if isinstance(songs, list) and songs:
-                                self.create_playlist(playlist_name, songs, max_songs=100)
+                        if hybrid_songs:
+                            self.create_playlist(playlist_name, hybrid_songs, max_songs=30)
+                    
+                    # Track AudioMuse service
+                    audiomuse_playlists = self.stats["playlists_created"] - playlists_before_audiomuse
+                    self.service_tracker.record(
+                        "audiomuse",
+                        success=True,
+                        playlists=audiomuse_playlists
+                    )
+                    logger.info("AudioMuse-AI service succeeded: %d playlists", audiomuse_playlists)
+                    
+                    # Create Discovery from AI response (LLM-only for new discoveries)
+                    if "Discovery" in all_playlists:
+                        discovery_songs = all_playlists["Discovery"]
+                        if isinstance(discovery_songs, list) and discovery_songs:
+                            logger.info("=" * 70)
+                            logger.info("DISCOVERY (LLM-only for new discoveries)")
+                            logger.info("=" * 70)
+                            self.create_playlist("Discovery", discovery_songs, max_songs=50)
+                else:
+                    # Original behavior: use all AI-generated playlists
+                    for playlist_name, songs in all_playlists.items():
+                        if isinstance(songs, list) and songs:
+                            self.create_playlist(playlist_name, songs, max_songs=100)
 
             
             # External services (run regardless of starred songs, but only if should_generate_regular)
@@ -1396,7 +1392,6 @@ CRITICAL RULES:
                                 llm_response = response.choices[0].message.content
                             
                             # Parse response
-                            import json
                             llm_data = json.loads(llm_response)
                             llm_songs = llm_data.get("songs", [])
                             
@@ -1505,10 +1500,9 @@ CRITICAL RULES:
             self._record_successful_run()
     
         except Exception as e:
-           write_health_status(BASE_DIR, "unhealthy", f"Error: {str(e)[:200]}")
-           logger.error("Fatal error: %s", e, exc_info=True)
-           sys.exit(1)
-
+            write_health_status(BASE_DIR, "unhealthy", f"Error: {str(e)[:200]}")
+            logger.error("Fatal error: %s", e, exc_info=True)
+            sys.exit(1)
 
 
 # ============================================================================

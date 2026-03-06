@@ -4,6 +4,7 @@ import hashlib
 import json
 from json_repair import repair_json
 import logging
+import math
 import os
 import random
 import re
@@ -146,10 +147,10 @@ class AIRecommendationEngine:
         
         # Diversity score: higher when more evenly distributed
         if total > 0:
-            # Calculate normalized entropy
-            entropy = sum(-(count/total) * (count/total).bit_length() for count in artist_counts.values() if count > 0)
-            max_entropy = total.bit_length() if total > 1 else 1
-            profile["diversity_score"] = entropy / max_entropy if max_entropy > 0 else 0
+            # Calculate normalized Shannon entropy
+            entropy = -sum((count/total) * math.log2(count/total) for count in artist_counts.values() if count > 0)
+            max_entropy = math.log2(len(artist_counts)) if len(artist_counts) > 1 else 1
+            profile["diversity_score"] = min(entropy / max_entropy, 1.0) if max_entropy > 0 else 0
         
         profile["artist_distribution"] = dict(artist_counts.most_common(10))
         
@@ -594,7 +595,6 @@ CRITICAL RULES:
                 logger.warning("Thinking budget nearly exhausted (%d/%d tokens)",
                              thoughts, thinking_budget)
 
-        # === FIX START ===
         # Check for empty response
         if not response.text or response.text.strip() == "":
             logger.error("Gemini returned empty response")
@@ -609,7 +609,6 @@ CRITICAL RULES:
             raise ValueError("Invalid JSON response from Gemini") from e
             
         return response.text
-        # === FIX END ===
         
     def _generate_with_openai(
         self,
