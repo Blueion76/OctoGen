@@ -276,7 +276,7 @@ class AIRecommendationEngine:
         recent_file = self.data_dir / "recent_playlist_songs.json"
         try:
             if recent_file.exists():
-                with open(recent_file, 'r') as f:
+                with open(recent_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 if isinstance(data, list):
                     return set(data)
@@ -286,24 +286,36 @@ class AIRecommendationEngine:
 
     def _save_recent_songs(self, songs: list) -> None:
         """Save recently recommended songs to disk (capped at 200 entries across last 2 runs).
-        
+
+        The file is written atomically (temp file + os.replace) so an interrupted
+        write never leaves a corrupt or empty file on disk.
+
         Args:
             songs: List of song dicts with "artist" and "title" keys from the new playlists.
         """
         recent_file = self.data_dir / "recent_playlist_songs.json"
         try:
             existing = self._load_recent_songs()
-            new_entries = {
+            new_entries = [
                 f"{s.get('artist', '')} - {s.get('title', '')}"
                 for s in songs
                 if s.get('artist') and s.get('title')
-            }
-            combined = list(existing | new_entries)
-            # Cap at 200 entries (approximately 2 runs worth)
-            if len(combined) > 200:
-                combined = combined[-200:]
-            with open(recent_file, 'w') as f:
-                json.dump(combined, f)
+            ]
+            # Build ordered list: existing first (oldest), new entries appended last
+            # so that truncation with [-200:] always keeps the most recent songs.
+            seen: set = set()
+            ordered: list = []
+            for entry in list(existing) + new_entries:
+                if entry not in seen:
+                    seen.add(entry)
+                    ordered.append(entry)
+            # Cap at 200 entries (approximately 2 runs worth); drop oldest first
+            combined = ordered[-200:]
+            # Atomic write: write to a sibling temp file then replace
+            tmp_file = recent_file.with_suffix(".json.tmp")
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(combined, f, ensure_ascii=False)
+            os.replace(tmp_file, recent_file)
             logger.info("Saved %d recent songs to disk (%d total)", len(new_entries), len(combined))
         except Exception as e:
             logger.warning("Could not save recent songs: %s", str(e)[:100])
