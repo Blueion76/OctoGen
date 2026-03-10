@@ -65,7 +65,7 @@ class SpotifyImporter:
             Bare playlist ID string
         """
         # Match https://open.spotify.com/playlist/<id>[?...]
-        match = re.search(r"spotify\.com/playlist/([A-Za-z0-9]+)", playlist_id_or_url)
+        match = re.search(r"spotify\.com/playlist/([A-Za-z0-9_-]+)", playlist_id_or_url)
         if match:
             return match.group(1)
         # Otherwise assume it is already a bare ID

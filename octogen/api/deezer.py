@@ -56,7 +56,8 @@ class DeezerImporter:
             Bare playlist ID string
         """
         # Match https://www.deezer.com/[locale/]playlist/<id>[?...]
-        match = re.search(r"deezer\.com(?:/[a-z]{2})?/playlist/(\d+)", playlist_id_or_url)
+        # Locale may be 'en', 'pt-br', 'zh-cn', etc.
+        match = re.search(r"deezer\.com(?:/[a-z]{2}(?:-[a-z]{2})?)?/playlist/(\d+)", playlist_id_or_url)
         if match:
             return match.group(1)
         # Otherwise assume it is already a bare ID

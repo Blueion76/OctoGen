@@ -1323,7 +1323,7 @@ CRITICAL RULES:
                     for playlist_url in playlist_urls:
                         tracks = self.spotify_importer.get_playlist_tracks(playlist_url)
                         if tracks:
-                            playlist_id = playlist_url.rstrip("/").split("/")[-1].split("?")[0]
+                            playlist_id = self.spotify_importer._extract_playlist_id(playlist_url)
                             playlist_name = f"Spotify: {playlist_id}"
                             self.create_playlist(playlist_name, tracks, max_songs=100)
                     playlists_created = self.stats["playlists_created"] - playlists_before
@@ -1348,7 +1348,7 @@ CRITICAL RULES:
                     for playlist_url in playlist_urls:
                         tracks = self.deezer_importer.get_playlist_tracks(playlist_url)
                         if tracks:
-                            playlist_id = playlist_url.rstrip("/").split("/")[-1].split("?")[0]
+                            playlist_id = self.deezer_importer._extract_playlist_id(playlist_url)
                             playlist_name = f"Deezer: {playlist_id}"
                             self.create_playlist(playlist_name, tracks, max_songs=100)
                     playlists_created = self.stats["playlists_created"] - playlists_before
