@@ -86,8 +86,8 @@ AI_API_KEY=ollama
 - **Ollama**: Use `ollama` as the key
 
 **Notes**:
-- **Optional**: Not required if you configure AudioMuse-AI, Last.fm, or ListenBrainz
-- At least one music source must be configured (LLM, AudioMuse, Last.fm, or ListenBrainz)
+- **Optional**: Not required if you configure AudioMuse-AI, Last.fm, ListenBrainz, Spotify Import, or Deezer Import
+- At least one music source must be configured (LLM, AudioMuse, Last.fm, ListenBrainz, Spotify Import, or Deezer Import)
 - Keep API keys secure and never commit to version control
 
 ---

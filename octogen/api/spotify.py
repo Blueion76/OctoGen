@@ -55,7 +55,7 @@ class SpotifyImporter:
             return False
 
     @staticmethod
-    def _extract_playlist_id(playlist_id_or_url: str) -> str:
+    def extract_playlist_id(playlist_id_or_url: str) -> str:
         """Extract the bare playlist ID from a URL or return it unchanged.
 
         Args:
@@ -80,7 +80,7 @@ class SpotifyImporter:
         Returns:
             List of dicts with 'artist' and 'title' keys
         """
-        playlist_id = self._extract_playlist_id(playlist_id_or_url)
+        playlist_id = self.extract_playlist_id(playlist_id_or_url)
         tracks: List[Dict] = []
 
         try:
