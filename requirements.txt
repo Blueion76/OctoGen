@@ -29,6 +29,12 @@ rich>=13.7.0
 # Fixes malformed JSON AI responses
 json-repair
 
+# Spotify playlist import
+spotipy>=2.24.0
+
+# Deezer playlist import
+deezer-python>=0.10.0
+
 # Note: Uses Python standard library for:
 # - json, os, sys, pathlib
 # - logging, hashlib, secrets

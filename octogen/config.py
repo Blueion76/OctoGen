@@ -81,6 +81,16 @@ def load_config_from_env() -> Dict:
             "ai_model": os.getenv("AUDIOMUSE_AI_MODEL", "gemini-2.5-flash"),
             "ai_api_key": load_secret("AUDIOMUSE_AI_API_KEY"),
         },
+        "spotify": {
+            "enabled": os.getenv("SPOTIFY_IMPORT_ENABLED", "false").lower() == "true",
+            "client_id": load_secret("SPOTIFY_CLIENT_ID"),
+            "client_secret": load_secret("SPOTIFY_CLIENT_SECRET"),
+            "playlist_urls": os.getenv("SPOTIFY_PLAYLIST_URLS", ""),
+        },
+        "deezer": {
+            "enabled": os.getenv("DEEZER_IMPORT_ENABLED", "false").lower() == "true",
+            "playlist_urls": os.getenv("DEEZER_PLAYLIST_URLS", ""),
+        },
         "performance": {
             "album_batch_size": int(os.getenv("ALBUM_BATCH_SIZE", "500")),
             "max_albums_scan": int(os.getenv("MAX_ALBUMS_SCAN", "10000")),

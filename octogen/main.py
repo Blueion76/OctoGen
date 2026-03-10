@@ -33,6 +33,8 @@ from octogen.api.navidrome import NavidromeAPI, OctoFiestaTrigger
 from octogen.api.lastfm import LastFMAPI
 from octogen.api.listenbrainz import ListenBrainzAPI
 from octogen.api.audiomuse import AudioMuseClient
+from octogen.api.spotify import SpotifyImporter
+from octogen.api.deezer import DeezerImporter
 from octogen.ai.engine import AIRecommendationEngine
 from octogen.models.tracker import ServiceTracker, RunTracker
 from octogen.web.health import write_health_status
@@ -145,6 +147,39 @@ class OctoGenEngine:
                 logger.warning("⚠️ AudioMuse-AI not accessible at %s, falling back to LLM-only mode", audiomuse_url)
                 self.audiomuse_client = None
 
+        self.spotify_importer: Optional[SpotifyImporter] = None
+        if self.config.get("spotify", {}).get("enabled", False):
+            try:
+                spotify_importer = SpotifyImporter(
+                    client_id=self.config["spotify"]["client_id"],
+                    client_secret=self.config["spotify"]["client_secret"],
+                )
+            except ImportError as e:
+                logger.warning("⚠️ Spotify importer disabled: missing optional dependency (%s)", e)
+            except Exception as e:
+                logger.warning("⚠️ Spotify importer disabled due to initialization error: %s", e)
+            else:
+                if not spotify_importer.check_connection():
+                    logger.warning("⚠️ Spotify credentials invalid or connection failed")
+                else:
+                    self.spotify_importer = spotify_importer
+                    logger.info("✅ Spotify importer connected")
+
+        self.deezer_importer: Optional[DeezerImporter] = None
+        if self.config.get("deezer", {}).get("enabled", False):
+            try:
+                deezer_importer = DeezerImporter()
+            except ImportError as e:
+                logger.warning("⚠️ Deezer importer disabled: missing optional dependency (%s)", e)
+            except Exception as e:
+                logger.warning("⚠️ Deezer importer disabled due to initialization error: %s", e)
+            else:
+                if not deezer_importer.check_connection():
+                    logger.warning("⚠️ Deezer connection failed")
+                else:
+                    self.deezer_importer = deezer_importer
+                    logger.info("✅ Deezer importer connected")
+
         # Stats
         self.stats = {
             "playlists_created": 0,
@@ -234,7 +269,17 @@ class OctoGenEngine:
                 "ai_api_key": os.getenv("AUDIOMUSE_AI_API_KEY", ""),
                 "songs_per_mix": self._get_env_int("AUDIOMUSE_SONGS_PER_MIX", 25),
                 "llm_songs_per_mix": self._get_env_int("LLM_SONGS_PER_MIX", 5)
-            }
+            },
+            "spotify": {
+                "enabled": self._get_env_bool("SPOTIFY_IMPORT_ENABLED", False),
+                "client_id": os.getenv("SPOTIFY_CLIENT_ID", ""),
+                "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET", ""),
+                "playlist_urls": os.getenv("SPOTIFY_PLAYLIST_URLS", ""),
+            },
+            "deezer": {
+                "enabled": self._get_env_bool("DEEZER_IMPORT_ENABLED", False),
+                "playlist_urls": os.getenv("DEEZER_PLAYLIST_URLS", ""),
+            },
         }
 
         # Log configuration (without secrets)
@@ -246,6 +291,10 @@ class OctoGenEngine:
             logger.info("✓ ListenBrainz enabled: %s", config['listenbrainz']['username'])
         if config['audiomuse']['enabled']:
             logger.info("✓ AudioMuse-AI enabled: %s", config['audiomuse']['url'])
+        if config['spotify']['enabled']:
+            logger.info("✓ Spotify import enabled")
+        if config['deezer']['enabled']:
+            logger.info("✓ Deezer import enabled")
 
         return config
 
@@ -270,8 +319,10 @@ class OctoGenEngine:
         has_audiomuse = self.config.get("audiomuse", {}).get("enabled", False)
         has_lastfm = self.config.get("lastfm", {}).get("enabled", False)
         has_listenbrainz = self.config.get("listenbrainz", {}).get("enabled", False)
+        has_spotify = self.config.get("spotify", {}).get("enabled", False)
+        has_deezer = self.config.get("deezer", {}).get("enabled", False)
         
-        if not (has_ai or has_audiomuse or has_lastfm or has_listenbrainz):
+        if not (has_ai or has_audiomuse or has_lastfm or has_listenbrainz or has_spotify or has_deezer):
             logger.error("=" * 70)
             logger.error("❌ No music source configured!")
             logger.error("❌ OctoGen requires at least one of:")
@@ -279,6 +330,8 @@ class OctoGenEngine:
             logger.error("   2. AUDIOMUSE_ENABLED=true (for AudioMuse-AI sonic analysis)")
             logger.error("   3. LASTFM_ENABLED=true (for Last.fm recommendations)")
             logger.error("   4. LISTENBRAINZ_ENABLED=true (for ListenBrainz recommendations)")
+            logger.error("   5. SPOTIFY_IMPORT_ENABLED=true (for Spotify playlist import)")
+            logger.error("   6. DEEZER_IMPORT_ENABLED=true (for Deezer playlist import)")
             logger.error("=" * 70)
             sys.exit(1)
         
@@ -292,6 +345,10 @@ class OctoGenEngine:
             sources.append("Last.fm")
         if has_listenbrainz:
             sources.append("ListenBrainz")
+        if has_spotify:
+            sources.append("Spotify Import")
+        if has_deezer:
+            sources.append("Deezer Import")
         logger.info("✓ Music sources: %s", ", ".join(sources))
         
         # Validate URLs
@@ -326,6 +383,18 @@ class OctoGenEngine:
         if self.config.get("listenbrainz", {}).get("enabled", False):
             if not self.config["listenbrainz"].get("username"):
                 errors.append("ListenBrainz is enabled but LISTENBRAINZ_USERNAME is empty")
+
+        if self.config.get("spotify", {}).get("enabled", False):
+            if not self.config["spotify"].get("client_id"):
+                errors.append("Spotify import is enabled but SPOTIFY_CLIENT_ID is empty")
+            if not self.config["spotify"].get("client_secret"):
+                errors.append("Spotify import is enabled but SPOTIFY_CLIENT_SECRET is empty")
+            if not self.config["spotify"].get("playlist_urls"):
+                errors.append("Spotify import is enabled but SPOTIFY_PLAYLIST_URLS is empty")
+
+        if self.config.get("deezer", {}).get("enabled", False):
+            if not self.config["deezer"].get("playlist_urls"):
+                errors.append("Deezer import is enabled but DEEZER_PLAYLIST_URLS is empty")
         
         # Validate performance settings
         perf = self.config.get("performance", {})
@@ -1061,13 +1130,14 @@ CRITICAL RULES:
                 # When skipping regular playlists, we only need time-of-day playlists
                 # Don't exit, just skip to time-of-day playlist generation
                 pass
-            elif not all_playlists and not self.audiomuse_client and not self.lastfm and not self.listenbrainz:
+            elif not all_playlists and not self.audiomuse_client and not self.lastfm and not self.listenbrainz and not self.spotify_importer and not self.deezer_importer:
                 logger.error("=" * 70)
                 logger.error("❌ No playlists generated and no alternative services configured")
                 logger.error("❌ Nothing to process - exiting with error")
                 logger.error("=" * 70)
-                logger.debug("Available sources check: AI=%s, AudioMuse=%s, Last.fm=%s, ListenBrainz=%s",
-                           bool(all_playlists), bool(self.audiomuse_client), bool(self.lastfm), bool(self.listenbrainz))
+                logger.debug("Available sources check: AI=%s, AudioMuse=%s, Last.fm=%s, ListenBrainz=%s, Spotify=%s, Deezer=%s",
+                           bool(all_playlists), bool(self.audiomuse_client), bool(self.lastfm), bool(self.listenbrainz),
+                           bool(self.spotify_importer), bool(self.deezer_importer))
                 write_health_status(BASE_DIR, "unhealthy", "No music sources available")
                 sys.exit(1)
     
@@ -1265,6 +1335,57 @@ CRITICAL RULES:
                     logger.warning("ListenBrainz service failed: %s", e)
 
     
+            # --- SPOTIFY IMPORT ---
+            if should_generate_regular and self.spotify_importer:
+                logger.info("=" * 70)
+                logger.info("SPOTIFY PLAYLIST IMPORT")
+                logger.info("=" * 70)
+                try:
+                    playlists_before = self.stats["playlists_created"]
+                    playlist_urls = [
+                        u.strip()
+                        for u in self.config["spotify"]["playlist_urls"].split(",")
+                        if u.strip()
+                    ]
+                    for playlist_url in playlist_urls:
+                        tracks = self.spotify_importer.get_playlist_tracks(playlist_url)
+                        if tracks:
+                            playlist_id = self.spotify_importer.extract_playlist_id(playlist_url)
+                            playlist_name = f"Spotify: {playlist_id}"
+                            self.create_playlist(playlist_name, tracks, max_songs=100)
+                    playlists_created = self.stats["playlists_created"] - playlists_before
+                    self.service_tracker.record("spotify_import", success=True, playlists=playlists_created)
+                    logger.info("Spotify import succeeded: %d playlists", playlists_created)
+                except Exception as e:
+                    self.service_tracker.record("spotify_import", success=False, reason=str(e)[:100])
+                    logger.warning("Spotify import failed: %s", e)
+
+            # --- DEEZER IMPORT ---
+            if should_generate_regular and self.deezer_importer:
+                logger.info("=" * 70)
+                logger.info("DEEZER PLAYLIST IMPORT")
+                logger.info("=" * 70)
+                try:
+                    playlists_before = self.stats["playlists_created"]
+                    playlist_urls = [
+                        u.strip()
+                        for u in self.config["deezer"]["playlist_urls"].split(",")
+                        if u.strip()
+                    ]
+                    for playlist_url in playlist_urls:
+                        tracks = self.deezer_importer.get_playlist_tracks(playlist_url)
+                        if tracks:
+                            playlist_id = self.deezer_importer.extract_playlist_id(playlist_url)
+                            playlist_name = f"Deezer: {playlist_id}"
+                            self.create_playlist(playlist_name, tracks, max_songs=100)
+                    playlists_created = self.stats["playlists_created"] - playlists_before
+                    self.service_tracker.record("deezer_import", success=True, playlists=playlists_created)
+                    logger.info("Deezer import succeeded: %d playlists", playlists_created)
+                except Exception as e:
+                    self.service_tracker.record("deezer_import", success=False, reason=str(e)[:100])
+                    logger.warning("Deezer import failed: %s", e)
+
+    
             # Record successful regular playlist generation
             if should_generate_regular:
                 record_regular_playlist_generation(BASE_DIR)
@@ -1453,6 +1574,8 @@ CRITICAL RULES:
                         "audiomuse": "AudioMuse-AI",
                         "lastfm": "Last.fm",
                         "listenbrainz": "ListenBrainz",
+                        "spotify_import": "Spotify Import",
+                        "deezer_import": "Deezer Import",
                         "timeofday_playlist": "Time-of-Day Playlist"
                     }.get(service_name, service_name)
                     
@@ -1469,6 +1592,8 @@ CRITICAL RULES:
                         "audiomuse": "AudioMuse-AI",
                         "lastfm": "Last.fm",
                         "listenbrainz": "ListenBrainz",
+                        "spotify_import": "Spotify Import",
+                        "deezer_import": "Deezer Import",
                         "timeofday_playlist": "Time-of-Day Playlist"
                     }.get(service_name, service_name)
                     

@@ -86,8 +86,8 @@ AI_API_KEY=ollama
 - **Ollama**: Use `ollama` as the key
 
 **Notes**:
-- **Optional**: Not required if you configure AudioMuse-AI, Last.fm, or ListenBrainz
-- At least one music source must be configured (LLM, AudioMuse, Last.fm, or ListenBrainz)
+- **Optional**: Not required if you configure AudioMuse-AI, Last.fm, ListenBrainz, Spotify Import, or Deezer Import
+- At least one music source must be configured (LLM, AudioMuse, Last.fm, ListenBrainz, Spotify Import, or Deezer Import)
 - Keep API keys secure and never commit to version control
 
 ---
@@ -1079,6 +1079,86 @@ LLM_SONGS_PER_MIX=5
 
 ---
 
+## 🎵 Spotify Playlist Import (Optional)
+
+Import public Spotify playlists directly into Navidrome. Requires a free Spotify Developer app (client credentials flow — no user login needed).
+
+### SPOTIFY_IMPORT_ENABLED
+**Description**: Enable Spotify playlist import  
+**Default**: `false`  
+**Example**:
+```bash
+SPOTIFY_IMPORT_ENABLED=true
+```
+
+---
+
+### SPOTIFY_CLIENT_ID
+**Description**: Spotify application client ID  
+**Required**: If `SPOTIFY_IMPORT_ENABLED=true`  
+**Example**:
+```bash
+SPOTIFY_CLIENT_ID=abc123def456...
+```
+**Get Key**: https://developer.spotify.com/dashboard (create a free app)
+
+---
+
+### SPOTIFY_CLIENT_SECRET
+**Description**: Spotify application client secret  
+**Required**: If `SPOTIFY_IMPORT_ENABLED=true`  
+**Example**:
+```bash
+SPOTIFY_CLIENT_SECRET=xyz789...
+```
+**Notes**:
+- Supports Docker secrets
+- Keep this value secure
+
+---
+
+### SPOTIFY_PLAYLIST_URLS
+**Description**: Comma-separated list of Spotify playlist URLs to import  
+**Required**: If `SPOTIFY_IMPORT_ENABLED=true`  
+**Example**:
+```bash
+SPOTIFY_PLAYLIST_URLS=https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M,https://open.spotify.com/playlist/37i9dQZEVXbNG2KDcFcKOF
+```
+**Notes**:
+- Accepts full URLs (`https://open.spotify.com/playlist/<id>`) or bare playlist IDs
+- Each playlist is created in Navidrome as `Spotify: <playlist_id>`
+- Up to 100 tracks per playlist are imported
+
+---
+
+## 🎵 Deezer Playlist Import (Optional)
+
+Import public Deezer playlists directly into Navidrome. No API credentials required.
+
+### DEEZER_IMPORT_ENABLED
+**Description**: Enable Deezer playlist import  
+**Default**: `false`  
+**Example**:
+```bash
+DEEZER_IMPORT_ENABLED=true
+```
+
+---
+
+### DEEZER_PLAYLIST_URLS
+**Description**: Comma-separated list of Deezer playlist URLs to import  
+**Required**: If `DEEZER_IMPORT_ENABLED=true`  
+**Example**:
+```bash
+DEEZER_PLAYLIST_URLS=https://www.deezer.com/playlist/1313621735,https://www.deezer.com/playlist/908622995
+```
+**Notes**:
+- Accepts full URLs (`https://www.deezer.com/playlist/<id>`) or bare numeric IDs
+- Each playlist is created in Navidrome as `Deezer: <playlist_id>`
+- Up to 100 tracks per playlist are imported
+
+---
+
 ## 🔗 Related Documentation
 
 - **Main Documentation**: [README.md](README.md)
@@ -1208,11 +1288,13 @@ docker logs octogen | grep "Timezone:"
 | **Last.fm** | 3 | LASTFM_ENABLED, LASTFM_API_KEY, LASTFM_USERNAME |
 | **ListenBrainz** | 3 | LISTENBRAINZ_ENABLED, LISTENBRAINZ_USERNAME, LISTENBRAINZ_TOKEN |
 | **AudioMuse-AI** | 7 | AUDIOMUSE_ENABLED, AUDIOMUSE_URL, AUDIOMUSE_AI_PROVIDER, AUDIOMUSE_AI_MODEL, AUDIOMUSE_AI_API_KEY, AUDIOMUSE_SONGS_PER_MIX, LLM_SONGS_PER_MIX |
+| **Spotify Import** | 4 | SPOTIFY_IMPORT_ENABLED, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_PLAYLIST_URLS |
+| **Deezer Import** | 2 | DEEZER_IMPORT_ENABLED, DEEZER_PLAYLIST_URLS |
 | **Performance** | 5 | PERF_ALBUM_BATCH_SIZE, PERF_MAX_ALBUMS_SCAN, PERF_SCAN_TIMEOUT, PERF_DOWNLOAD_DELAY, PERF_POST_SCAN_DELAY |
 | **System** | 2 | LOG_LEVEL, OCTOGEN_DATA_DIR |
-| **Total** | **54** | |
+| **Total** | **60** | |
 
-**Note**: At least one music source must be configured: LLM, AudioMuse-AI, Last.fm, or ListenBrainz.
+**Note**: At least one music source must be configured: LLM, AudioMuse-AI, Last.fm, ListenBrainz, Spotify Import, or Deezer Import.
 
 ---
 
