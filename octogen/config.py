@@ -64,7 +64,7 @@ def load_config_from_env() -> Dict:
             "base_url": os.getenv("AI_BASE_URL"),
             "max_context_songs": int(os.getenv("AI_MAX_CONTEXT_SONGS", "500")),
             "max_output_tokens": int(os.getenv("AI_MAX_OUTPUT_TOKENS", "65535")),
-            "request_timeout": int(os.getenv("AI_REQUEST_TIMEOUT", "300")),
+            "request_timeout": max(30, int(os.getenv("AI_REQUEST_TIMEOUT", "300"))),
         },
         "lastfm": {
             "enabled": os.getenv("LASTFM_ENABLED", "false").lower() == "true",
