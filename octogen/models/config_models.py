@@ -48,6 +48,7 @@ class AIConfig(BaseModel):
     model: str = Field(..., description="Model name")
     backend: str = Field("gemini", description="AI backend")
     base_url: Optional[str] = None
+    request_timeout: int = Field(300, ge=30, description="Request timeout in seconds")
     
     @field_validator('api_key')
     @classmethod

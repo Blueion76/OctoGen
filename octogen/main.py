@@ -99,6 +99,7 @@ class OctoGenEngine:
             max_context = int(self.config.get("ai", {}).get("max_context_songs", 500))
             max_output = int(self.config.get("ai", {}).get("max_output_tokens", 65535))
             backend = self.config.get("ai", {}).get("backend", "gemini")
+            request_timeout = int(self.config.get("ai", {}).get("request_timeout", 300))
 
             self.ai = AIRecommendationEngine(
                 api_key=self.config["ai"]["api_key"],
@@ -107,6 +108,7 @@ class OctoGenEngine:
                 base_url=self.config.get("ai", {}).get("base_url"),
                 max_context_songs=max_context,
                 max_output_tokens=max_output,
+                request_timeout=request_timeout,
             )
             logger.info("✓ AI engine initialized")
         else:
@@ -207,7 +209,8 @@ class OctoGenEngine:
                 "backend": os.getenv("AI_BACKEND", "gemini"),
                 "base_url": os.getenv("AI_BASE_URL"),
                 "max_context_songs": self._get_env_int("AI_MAX_CONTEXT_SONGS", 500),
-                "max_output_tokens": self._get_env_int("AI_MAX_OUTPUT_TOKENS", 65535)
+                "max_output_tokens": self._get_env_int("AI_MAX_OUTPUT_TOKENS", 65535),
+                "request_timeout": max(30, self._get_env_int("AI_REQUEST_TIMEOUT", 300)),
             },
             "performance": {
                 "album_batch_size": self._get_env_int("PERF_ALBUM_BATCH_SIZE", 500),
