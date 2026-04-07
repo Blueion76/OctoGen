@@ -848,8 +848,11 @@ CRITICAL RULES:
                 # Check if it's a timeout error — cover both exception type names and
                 # message-based detection for provider-specific exceptions (e.g. httpx,
                 # openai, google-genai) that don't all inherit from TimeoutError.
+                # ConnectionError is intentionally excluded because it covers unrelated
+                # failures (DNS errors, connection refused, bad AI_BASE_URL) that should
+                # fail immediately rather than be retried.
                 is_timeout = (
-                    isinstance(e, (TimeoutError, ConnectionError))
+                    isinstance(e, TimeoutError)
                     or 'Timeout' in error_type
                     or any(phrase in error_msg for phrase in [
                         'timed out', 'timeout', 'read timeout',

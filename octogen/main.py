@@ -209,7 +209,8 @@ class OctoGenEngine:
                 "backend": os.getenv("AI_BACKEND", "gemini"),
                 "base_url": os.getenv("AI_BASE_URL"),
                 "max_context_songs": self._get_env_int("AI_MAX_CONTEXT_SONGS", 500),
-                "max_output_tokens": self._get_env_int("AI_MAX_OUTPUT_TOKENS", 65535)
+                "max_output_tokens": self._get_env_int("AI_MAX_OUTPUT_TOKENS", 65535),
+                "request_timeout": max(30, self._get_env_int("AI_REQUEST_TIMEOUT", 300)),
             },
             "performance": {
                 "album_batch_size": self._get_env_int("PERF_ALBUM_BATCH_SIZE", 500),
