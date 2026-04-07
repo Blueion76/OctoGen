@@ -18,7 +18,7 @@ class ListenBrainzAPI:
     #      "Exploration for blueion, week of 2026-04-06 Mon"
     # Capture groups: username, week_start (YYYY-MM-DD), dow (Mon..Sun)
     _GENERATED_SUFFIX_RE = re.compile(
-        r"^(?P<base_title>.+?)\s+for\s+(?P<username>[A-Za-z0-9_\-]+),\s+week\s+of\s+"
+        r"^(?P<base_title>.+)\s+for\s+(?P<username>[A-Za-z0-9_\-]+),\s+week\s+of\s+"
         r"(?P<week_start>\d{4}-\d{2}-\d{2})\s+(?P<dow>Mon|Tue|Wed|Thu|Fri|Sat|Sun)$"
     )
 
@@ -26,7 +26,7 @@ class ListenBrainzAPI:
     _DOW_INDEX = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 
     @classmethod
-    def parse_generated_playlist_title(cls, title: str) -> Optional[Dict]:
+    def parse_generated_playlist_title(cls, title: Optional[str]) -> Optional[Dict]:
         """Parse a ListenBrainz-generated playlist title with the standard suffix.
 
         ListenBrainz appends ``for <user>, week of YYYY-MM-DD Ddd`` to every

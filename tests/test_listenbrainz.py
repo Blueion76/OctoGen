@@ -1,6 +1,5 @@
 """Tests for ListenBrainz generated playlist title parser."""
 
-import pytest
 from octogen.api.listenbrainz import ListenBrainzAPI
 
 
@@ -36,11 +35,18 @@ class TestParseGeneratedPlaylistTitle:
         assert result["base_title"] == "Top Discoveries"
         assert result["username"] == "bob_99"
 
+    def test_prefix_containing_for(self):
+        """Greedy base_title group splits on the final 'for <user>, week of' suffix."""
+        result = parse("Songs for Sleep for blueion, week of 2026-04-06 Mon")
+        assert result is not None
+        assert result["base_title"] == "Songs for Sleep"
+        assert result["username"] == "blueion"
+
     def test_base_title_trimmed(self):
         """Trailing whitespace between base title and 'for' is stripped."""
         result = parse("Weekly Jams   for blueion, week of 2026-04-06 Mon")
-        # Extra spaces before 'for' mean the regex won't match the lazy group
-        # cleanly — but the spec says base_title should be trimmed.
+        # Extra spaces before 'for' are accepted; the parsed base_title should
+        # still be trimmed.
         assert result is not None
         assert result["base_title"] == result["base_title"].rstrip()
 
