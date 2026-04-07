@@ -752,6 +752,17 @@ docker exec octogen sqlite3 /data/octogen_cache.db "SELECT COUNT(*) FROM ratings
 
 ---
 
+## 🧪 Running Tests
+
+Install development dependencies and run the test suite with pytest:
+
+```bash
+pip install -r requirements-dev.txt
+PYTHONPATH=. pytest tests/
+```
+
+---
+
 ## 🤝 Contributing
 
 Contributions welcome! Just create a pull request.
