@@ -1,6 +1,8 @@
 """ListenBrainz API client for music recommendations"""
 
 import logging
+import re
+from datetime import datetime
 import requests
 from typing import List, Dict, Optional
 
@@ -10,6 +12,59 @@ logger = logging.getLogger(__name__)
 
 class ListenBrainzAPI:
     """Fetches recommendations from ListenBrainz."""
+
+    # Matches the suffix that ListenBrainz appends to all generated playlists,
+    # e.g. "Weekly Jams for blueion, week of 2026-04-06 Mon"
+    #      "Exploration for blueion, week of 2026-04-06 Mon"
+    # Capture groups: username, week_start (YYYY-MM-DD), dow (Mon..Sun)
+    _GENERATED_SUFFIX_RE = re.compile(
+        r"^(?P<base_title>.+)\s+for\s+(?P<username>[A-Za-z0-9_\-]+),\s+week\s+of\s+"
+        r"(?P<week_start>\d{4}-\d{2}-\d{2})\s+(?P<dow>Mon|Tue|Wed|Thu|Fri|Sat|Sun)$"
+    )
+
+    # Maps three-letter day abbreviation to Python weekday index (Monday=0)
+    _DOW_INDEX = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
+
+    @classmethod
+    def parse_generated_playlist_title(cls, title: Optional[str]) -> Optional[Dict]:
+        """Parse a ListenBrainz-generated playlist title with the standard suffix.
+
+        ListenBrainz appends ``for <user>, week of YYYY-MM-DD Ddd`` to every
+        generated playlist regardless of the playlist type (e.g. "Weekly Jams",
+        "Exploration", etc.).
+
+        Args:
+            title: Raw playlist title string.
+
+        Returns:
+            A dict with keys ``base_title``, ``username``, ``week_start``, and
+            ``dow`` when the title matches and the date/day pair is valid;
+            ``None`` otherwise.
+        """
+        if not title:
+            return None
+
+        m = cls._GENERATED_SUFFIX_RE.match(title.strip())
+        if not m:
+            return None
+
+        week_start_str = m.group("week_start")
+        dow = m.group("dow")
+
+        try:
+            dt = datetime.strptime(week_start_str, "%Y-%m-%d")
+        except ValueError:
+            return None
+
+        if dt.weekday() != cls._DOW_INDEX[dow]:
+            return None
+
+        return {
+            "base_title": m.group("base_title").strip(),
+            "username": m.group("username"),
+            "week_start": week_start_str,
+            "dow": dow,
+        }
 
     def __init__(self, username: str, token: str = None):
         """Initialize ListenBrainz API client.
@@ -76,7 +131,15 @@ class ListenBrainzAPI:
             p for p in playlists
             if p.get("playlist", {}).get("title") and p.get("playlist", {}).get("identifier")
         ]
-        
+
+        # Enrich generated playlists with parsed metadata so callers can identify
+        # playlist type, owning user, and week without re-parsing the title.
+        for p in playlists:
+            title = p["playlist"].get("title", "")
+            parsed = self.parse_generated_playlist_title(title)
+            if parsed:
+                p["playlist"]["octogen_listenbrainz_generated"] = parsed
+
         # DEBUG
         if playlists:
             logger.info("First playlist keys: %s", list(playlists[0].keys()))
