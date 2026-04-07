@@ -1101,6 +1101,8 @@ SPOTIFY_IMPORT_ENABLED=true
 SPOTIFY_CLIENT_ID=abc123def456...
 ```
 **Get Key**: https://developer.spotify.com/dashboard (create a free app)
+**Notes**:
+- Supports Docker secrets
 
 ---
 

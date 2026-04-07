@@ -63,11 +63,12 @@ class DeezerImporter:
         # Otherwise assume it is already a bare ID
         return playlist_id_or_url.rstrip("/").split("/")[-1].split("?")[0]
 
-    def get_playlist_tracks(self, playlist_id_or_url: str) -> List[Dict]:
-        """Fetch all tracks from a Deezer playlist.
+    def get_playlist_tracks(self, playlist_id_or_url: str, max_tracks: int = 100) -> List[Dict]:
+        """Fetch tracks from a Deezer playlist up to *max_tracks* items.
 
         Args:
             playlist_id_or_url: Deezer playlist URL or bare playlist ID (int or str)
+            max_tracks: Maximum number of tracks to return (default 100)
 
         Returns:
             List of dicts with 'artist' and 'title' keys
@@ -78,6 +79,9 @@ class DeezerImporter:
         try:
             playlist = self.client.get_playlist(int(playlist_id))
             for track in playlist.tracks:
+                if len(tracks) >= max_tracks:
+                    break
+
                 title = (getattr(track, "title", None) or "").strip()
                 artist_obj = getattr(track, "artist", None)
                 artist = (getattr(artist_obj, "name", None) or "").strip() if artist_obj else ""

@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +71,12 @@ class SpotifyImporter:
         # Otherwise assume it is already a bare ID
         return playlist_id_or_url.rstrip("/").split("/")[-1].split("?")[0]
 
-    def get_playlist_tracks(self, playlist_id_or_url: str) -> List[Dict]:
-        """Fetch all tracks from a Spotify playlist.
+    def get_playlist_tracks(self, playlist_id_or_url: str, max_tracks: int = 100) -> List[Dict]:
+        """Fetch tracks from a Spotify playlist up to *max_tracks* items.
 
         Args:
             playlist_id_or_url: Spotify playlist URL or bare playlist ID
+            max_tracks: Maximum number of tracks to return (default 100)
 
         Returns:
             List of dicts with 'artist' and 'title' keys
@@ -87,7 +88,7 @@ class SpotifyImporter:
             results = self.sp.playlist_items(
                 playlist_id,
                 fields="items(track(name,artists(name))),next",
-                limit=100,
+                limit=min(100, max_tracks),
             )
 
             while results:
@@ -105,6 +106,9 @@ class SpotifyImporter:
 
                     tracks.append({"artist": artist, "title": title})
 
+                if len(tracks) >= max_tracks:
+                    break
+
                 next_url = results.get("next")
                 if next_url:
                     results = self.sp.next(results)
@@ -115,8 +119,8 @@ class SpotifyImporter:
             logger.error("Failed to fetch Spotify playlist '%s': %s", playlist_id, e)
             return []
 
-        logger.info("Fetched %d tracks from Spotify playlist '%s'", len(tracks), playlist_id)
-        return tracks
+        logger.info("Fetched %d tracks from Spotify playlist '%s'", len(tracks[:max_tracks]), playlist_id)
+        return tracks[:max_tracks]
 
     def get_user_playlists(self, limit: int = 20) -> List[Dict]:
         """List current user's playlists (requires user OAuth – not available with

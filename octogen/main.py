@@ -20,6 +20,7 @@ from collections import Counter
 # Import from refactored modules
 from octogen.utils.auth import subsonic_auth_params
 from octogen.utils.retry import retry_with_backoff
+from octogen.utils.secrets import load_secret
 from octogen.utils.helpers import (
     print_banner, 
     acquire_lock, 
@@ -272,8 +273,8 @@ class OctoGenEngine:
             },
             "spotify": {
                 "enabled": self._get_env_bool("SPOTIFY_IMPORT_ENABLED", False),
-                "client_id": os.getenv("SPOTIFY_CLIENT_ID", ""),
-                "client_secret": os.getenv("SPOTIFY_CLIENT_SECRET", ""),
+                "client_id": load_secret("SPOTIFY_CLIENT_ID", ""),
+                "client_secret": load_secret("SPOTIFY_CLIENT_SECRET", ""),
                 "playlist_urls": os.getenv("SPOTIFY_PLAYLIST_URLS", ""),
             },
             "deezer": {
@@ -1348,7 +1349,7 @@ CRITICAL RULES:
                         if u.strip()
                     ]
                     for playlist_url in playlist_urls:
-                        tracks = self.spotify_importer.get_playlist_tracks(playlist_url)
+                        tracks = self.spotify_importer.get_playlist_tracks(playlist_url, max_tracks=100)
                         if tracks:
                             playlist_id = self.spotify_importer.extract_playlist_id(playlist_url)
                             playlist_name = f"Spotify: {playlist_id}"
@@ -1373,7 +1374,7 @@ CRITICAL RULES:
                         if u.strip()
                     ]
                     for playlist_url in playlist_urls:
-                        tracks = self.deezer_importer.get_playlist_tracks(playlist_url)
+                        tracks = self.deezer_importer.get_playlist_tracks(playlist_url, max_tracks=100)
                         if tracks:
                             playlist_id = self.deezer_importer.extract_playlist_id(playlist_url)
                             playlist_name = f"Deezer: {playlist_id}"

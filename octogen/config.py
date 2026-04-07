@@ -10,6 +10,7 @@ from octogen.utils.secrets import load_secret
 from octogen.models.config_models import (
     OctoGenConfig, NavidromeConfig, OctoFiestaConfig, AIConfig,
     LastFMConfig, ListenBrainzConfig, AudioMuseConfig,
+    SpotifyConfig, DeezerConfig,
     PerformanceConfig, SchedulingConfig, MonitoringConfig,
     WebUIConfig, LoggingConfig
 )
@@ -142,6 +143,8 @@ def validate_config(config: Dict) -> Optional[OctoGenConfig]:
             lastfm=LastFMConfig(**config["lastfm"]) if config["lastfm"]["enabled"] else None,
             listenbrainz=ListenBrainzConfig(**config["listenbrainz"]) if config["listenbrainz"]["enabled"] else None,
             audiomuse=AudioMuseConfig(**config["audiomuse"]) if config["audiomuse"]["enabled"] else None,
+            spotify=SpotifyConfig(**config["spotify"]) if config.get("spotify", {}).get("enabled") else None,
+            deezer=DeezerConfig(**config["deezer"]) if config.get("deezer", {}).get("enabled") else None,
             performance=PerformanceConfig(**config["performance"]),
             scheduling=SchedulingConfig(**config["scheduling"]),
             monitoring=MonitoringConfig(**config["monitoring"]),
