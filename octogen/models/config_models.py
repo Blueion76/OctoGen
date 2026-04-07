@@ -89,6 +89,20 @@ class AudioMuseConfig(BaseModel):
     ai_api_key: Optional[str] = None
 
 
+class SpotifyConfig(BaseModel):
+    """Spotify import configuration"""
+    enabled: bool = Field(False, description="Enable Spotify playlist import")
+    client_id: Optional[str] = None
+    client_secret: Optional[str] = None
+    playlist_urls: str = Field("", description="Comma-separated playlist URLs")
+
+
+class DeezerConfig(BaseModel):
+    """Deezer import configuration"""
+    enabled: bool = Field(False, description="Enable Deezer playlist import")
+    playlist_urls: str = Field("", description="Comma-separated playlist URLs")
+
+
 class PerformanceConfig(BaseModel):
     """Performance configuration"""
     album_batch_size: int = Field(500, ge=1, le=5000)
@@ -160,6 +174,8 @@ class OctoGenConfig(BaseModel):
     lastfm: Optional[LastFMConfig] = None
     listenbrainz: Optional[ListenBrainzConfig] = None
     audiomuse: Optional[AudioMuseConfig] = None
+    spotify: Optional[SpotifyConfig] = None
+    deezer: Optional[DeezerConfig] = None
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     scheduling: SchedulingConfig = Field(default_factory=SchedulingConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
@@ -174,8 +190,10 @@ class OctoGenConfig(BaseModel):
         has_lastfm = self.lastfm is not None and self.lastfm.enabled
         has_listenbrainz = self.listenbrainz is not None and self.listenbrainz.enabled
         has_audiomuse = self.audiomuse is not None and self.audiomuse.enabled
+        has_spotify = self.spotify is not None and self.spotify.enabled
+        has_deezer = self.deezer is not None and self.deezer.enabled
         
-        if not any([has_ai, has_lastfm, has_listenbrainz, has_audiomuse]):
-            logger.warning("No music recommendation source configured (AI, Last.fm, ListenBrainz, or AudioMuse)")
+        if not any([has_ai, has_lastfm, has_listenbrainz, has_audiomuse, has_spotify, has_deezer]):
+            logger.warning("No music recommendation source configured (AI, Last.fm, ListenBrainz, AudioMuse, Spotify, or Deezer)")
         
         return self

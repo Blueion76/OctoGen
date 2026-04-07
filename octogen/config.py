@@ -10,6 +10,7 @@ from octogen.utils.secrets import load_secret
 from octogen.models.config_models import (
     OctoGenConfig, NavidromeConfig, OctoFiestaConfig, AIConfig,
     LastFMConfig, ListenBrainzConfig, AudioMuseConfig,
+    SpotifyConfig, DeezerConfig,
     PerformanceConfig, SchedulingConfig, MonitoringConfig,
     WebUIConfig, LoggingConfig
 )
@@ -82,6 +83,16 @@ def load_config_from_env() -> Dict:
             "ai_model": os.getenv("AUDIOMUSE_AI_MODEL", "gemini-2.5-flash"),
             "ai_api_key": load_secret("AUDIOMUSE_AI_API_KEY"),
         },
+        "spotify": {
+            "enabled": os.getenv("SPOTIFY_IMPORT_ENABLED", "false").lower() == "true",
+            "client_id": load_secret("SPOTIFY_CLIENT_ID"),
+            "client_secret": load_secret("SPOTIFY_CLIENT_SECRET"),
+            "playlist_urls": os.getenv("SPOTIFY_PLAYLIST_URLS", ""),
+        },
+        "deezer": {
+            "enabled": os.getenv("DEEZER_IMPORT_ENABLED", "false").lower() == "true",
+            "playlist_urls": os.getenv("DEEZER_PLAYLIST_URLS", ""),
+        },
         "performance": {
             "album_batch_size": int(os.getenv("ALBUM_BATCH_SIZE", "500")),
             "max_albums_scan": int(os.getenv("MAX_ALBUMS_SCAN", "10000")),
@@ -133,6 +144,8 @@ def validate_config(config: Dict) -> Optional[OctoGenConfig]:
             lastfm=LastFMConfig(**config["lastfm"]) if config["lastfm"]["enabled"] else None,
             listenbrainz=ListenBrainzConfig(**config["listenbrainz"]) if config["listenbrainz"]["enabled"] else None,
             audiomuse=AudioMuseConfig(**config["audiomuse"]) if config["audiomuse"]["enabled"] else None,
+            spotify=SpotifyConfig(**config["spotify"]) if config.get("spotify", {}).get("enabled") else None,
+            deezer=DeezerConfig(**config["deezer"]) if config.get("deezer", {}).get("enabled") else None,
             performance=PerformanceConfig(**config["performance"]),
             scheduling=SchedulingConfig(**config["scheduling"]),
             monitoring=MonitoringConfig(**config["monitoring"]),
