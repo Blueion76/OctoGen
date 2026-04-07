@@ -45,7 +45,8 @@ class AIRecommendationEngine:
         base_url: Optional[str] = None,
         max_context_songs: int = 500,
         max_output_tokens: int = 65535,
-        data_dir: Optional[Path] = None
+        request_timeout: int = 300,
+        data_dir: Optional[Path] = None,
     ):
         """Initialize AI recommendation engine.
         
@@ -56,6 +57,7 @@ class AIRecommendationEngine:
             base_url: Optional base URL for OpenAI-compatible APIs
             max_context_songs: Maximum songs to include in context
             max_output_tokens: Maximum output tokens
+            request_timeout: Timeout in seconds for each API request
             data_dir: Data directory for cache files
         """
         self.api_key = api_key
@@ -63,6 +65,7 @@ class AIRecommendationEngine:
         self.backend = backend.lower()
         self.max_context_songs = max_context_songs
         self.max_output_tokens = max_output_tokens
+        self.request_timeout = request_timeout
         
         # Set up data directory
         if data_dir is None:
@@ -647,7 +650,7 @@ CRITICAL RULES:
             temperature=0.8,
             max_tokens=self.max_output_tokens,
             response_format={"type": "json_object"},
-            timeout=120,
+            timeout=self.request_timeout,
         )
 
         return response.choices[0].message.content.strip()
@@ -816,7 +819,7 @@ CRITICAL RULES:
         return all_playlists, None
             
     def _generate_with_retry(self, generate_func, *args, **kwargs) -> str:
-        """Retry AI generation with exponential backoff for rate limits.
+        """Retry AI generation with exponential backoff for rate limits and timeouts.
         
         Args:
             generate_func: Function to call
@@ -841,10 +844,24 @@ CRITICAL RULES:
                     'rate limit', 'quota', 'too many requests', '429', 
                     'resource_exhausted', 'rate_limit_exceeded'
                 ]) or 'RateLimitError' in error_type
+
+                # Check if it's a timeout error — cover both exception type names and
+                # message-based detection for provider-specific exceptions (e.g. httpx,
+                # openai, google-genai) that don't all inherit from TimeoutError.
+                is_timeout = (
+                    isinstance(e, (TimeoutError, ConnectionError))
+                    or 'Timeout' in error_type
+                    or any(phrase in error_msg for phrase in [
+                        'timed out', 'timeout', 'read timeout',
+                        'connect timeout', 'connection timeout',
+                    ])
+                )
                 
                 if attempt == max_retries - 1:
                     if is_rate_limit:
                         logger.warning("💡 Tip: Consider using a different AI provider or model with higher limits")
+                    elif is_timeout:
+                        logger.warning("💡 Tip: Consider increasing AI_REQUEST_TIMEOUT if timeouts persist")
                     raise  # Last attempt, let it fail
                 
                 if is_rate_limit:
@@ -854,9 +871,16 @@ CRITICAL RULES:
                         error_type, attempt + 1, max_retries, delay
                     )
                     time.sleep(delay)
+                elif is_timeout:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        "Request timed out [%s] (attempt %d/%d). Retrying in %.1fs...",
+                        error_type, attempt + 1, max_retries, delay
+                    )
+                    time.sleep(delay)
                 else:
-                    # Not a rate limit error, fail immediately
-                    logger.error("Non-rate-limit error: %s", str(e)[:200])
+                    # Not a rate limit or timeout error, fail immediately
+                    logger.error("Non-retryable error: %s", str(e)[:200])
                     raise
         
         raise Exception("Max retries exceeded")

@@ -341,6 +341,7 @@ LLM_SONGS_PER_MIX=5         # Songs from LLM (default: 5)
 | `AI_MODEL` | `gemini-2.5-flash` | AI model to use |
 | `AI_BACKEND` | `gemini` | Backend: `gemini` or `openai` |
 | `AI_BASE_URL` | (none) | Custom API endpoint |
+| `AI_REQUEST_TIMEOUT` | `300` | API request timeout in seconds |
 | `SCHEDULE_CRON` | (none) | Cron schedule (e.g., `0 2 * * *`) |
 | `TZ` | `UTC` | Timezone (e.g., `America/Chicago`) |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |

@@ -184,6 +184,26 @@ AI_MAX_OUTPUT_TOKENS=8192
 
 ---
 
+### AI_REQUEST_TIMEOUT
+**Description**: Timeout in seconds for each AI API request. Increase this value if you experience timeout errors, especially with slower models or high `AI_MAX_OUTPUT_TOKENS` values.  
+**Default**: `300`  
+**Minimum**: `30`  
+**Example**:
+```bash
+# Default (5 minutes)
+AI_REQUEST_TIMEOUT=300
+
+# Increase for large outputs or slow connections
+AI_REQUEST_TIMEOUT=600
+```
+
+**Notes**:
+- Applies to OpenAI-compatible backends (`openai`, `groq`, `mistral`, `ollama`, custom)
+- On timeout, OctoGen will retry up to 3 times with exponential backoff before failing
+- If you consistently hit timeouts, also consider reducing `AI_MAX_OUTPUT_TOKENS`
+
+---
+
 ## 🕐 Scheduling Configuration (Optional)
 
 ### SCHEDULE_CRON
@@ -1197,7 +1217,7 @@ docker logs octogen | grep "Timezone:"
 | Category | Count | Variables |
 |----------|-------|-----------|
 | **Required** | 4 | NAVIDROME_URL, NAVIDROME_USER, NAVIDROME_PASSWORD, OCTOFIESTA_URL |
-| **AI Config** | 6 | AI_API_KEY (optional), AI_MODEL, AI_BACKEND, AI_BASE_URL, AI_MAX_CONTEXT_SONGS, AI_MAX_OUTPUT_TOKENS |
+| **AI Config** | 7 | AI_API_KEY (optional), AI_MODEL, AI_BACKEND, AI_BASE_URL, AI_MAX_CONTEXT_SONGS, AI_MAX_OUTPUT_TOKENS, AI_REQUEST_TIMEOUT |
 | **Scheduling** | 2 | SCHEDULE_CRON, TZ, MIN_RUN_INTERVAL_HOURS |
 | **Monitoring** | 4 | METRICS_ENABLED, METRICS_PORT, CIRCUIT_BREAKER_THRESHOLD, CIRCUIT_BREAKER_TIMEOUT |
 | **Web UI** | 2 | WEB_ENABLED, WEB_PORT |
