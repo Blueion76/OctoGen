@@ -1,10 +1,7 @@
 """Tests for Docker secrets / environment variable loading in load_secret()."""
 
 import os
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from octogen.utils.secrets import load_secret
 
@@ -20,11 +17,8 @@ class TestLoadSecret:
                 result = load_secret("SPOTIFY_CLIENT_ID", "")
         assert result == "env_value"
 
-    def test_docker_secret_returned_when_non_empty(self, tmp_path):
+    def test_docker_secret_returned_when_non_empty(self):
         """A non-empty Docker secrets file is returned in preference to the env var."""
-        secret_file = tmp_path / "spotify_client_id"
-        secret_file.write_text("docker_secret_value\n")
-
         with patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "env_value"}, clear=True):
             with patch("octogen.utils.secrets.Path") as mock_path_cls:
                 mock_path_cls.return_value.exists.return_value = True
@@ -37,8 +31,8 @@ class TestLoadSecret:
 
         This is the core regression: previously load_secret() returned '' from
         an empty secrets file without ever reading the environment variable,
-        causing SPOTIFY_IMPORT_ENABLED=true to be ineffective even when all
-        required env vars were correctly set.
+        causing credential env vars such as SPOTIFY_CLIENT_ID to be shadowed
+        and config validation to fail even when those env vars were set.
         """
         with patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "real_client_id"}, clear=True):
             with patch("octogen.utils.secrets.Path") as mock_path_cls:
@@ -72,6 +66,14 @@ class TestLoadSecret:
                 mock_path_cls.return_value.exists.return_value = False
                 result = load_secret("SPOTIFY_CLIENT_ID")
         assert result is None
+
+    def test_whitespace_only_env_var_returns_default(self):
+        """A whitespace-only env var is treated as empty and returns the default."""
+        with patch.dict(os.environ, {"SPOTIFY_CLIENT_ID": "   "}, clear=True):
+            with patch("octogen.utils.secrets.Path") as mock_path_cls:
+                mock_path_cls.return_value.exists.return_value = False
+                result = load_secret("SPOTIFY_CLIENT_ID", "fallback")
+        assert result == "fallback"
 
     def test_docker_secret_read_error_falls_through_to_env_var(self):
         """If reading the secrets file raises an exception, the env var is used."""

@@ -31,5 +31,7 @@ def load_secret(secret_name: str, default: Optional[str] = None) -> Optional[str
             pass
     
     # Fall back to environment variable
-    value = os.getenv(secret_name, default)
+    value = os.getenv(secret_name)
+    if value is not None:
+        value = value.strip()
     return value if value else default
