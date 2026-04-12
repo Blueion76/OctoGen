@@ -1244,6 +1244,72 @@ CRITICAL RULES:
                 try:
                     playlists_before = self.stats["playlists_created"]
             
+                    # --- Cleanup stale LB weekly playlists in Navidrome ---
+                    # Delete any Navidrome playlists that were previously imported
+                    # from a ListenBrainz generated weekly playlist but are now
+                    # older than two weeks (i.e. the week_start date embedded in
+                    # the name is more than 14 days in the past).
+                    #
+                    # Covered formats:
+                    #   "LB: Weekly Jams for blueion, week of 2026-04-06 Mon"
+                    #   "LB: Exploration for blueion, week of 2026-04-06 Mon"
+                    #   etc. – any "LB: <title> for <user>, week of YYYY-MM-DD Ddd"
+                    # Legacy static names ("LB: Weekly Exploration",
+                    # "LB: Last Week's Exploration") are replaced in-place by
+                    # create_playlist() so they need no explicit cleanup here.
+                    try:
+                        today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+                        cutoff = today - timedelta(days=14)
+                        all_nd_playlists = self.nd.get_all_playlists()
+                        cleanup_scanned = 0
+                        cleanup_matched = 0
+                        cleanup_deleted = 0
+                        cleanup_failed = 0
+                        for nd_pl in all_nd_playlists:
+                            nd_name = nd_pl.get("name", "")
+                            if not nd_name.startswith("LB: "):
+                                continue
+                            cleanup_scanned += 1
+                            # Strip the "LB: " prefix and try to parse
+                            inner = nd_name[len("LB: "):]
+                            parsed = self.listenbrainz.parse_generated_playlist_title(inner)
+                            if not parsed:
+                                continue
+                            try:
+                                week_dt = datetime.strptime(parsed["week_start"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                            except ValueError:
+                                continue
+                            if week_dt <= cutoff:
+                                cleanup_matched += 1
+                                pl_id = nd_pl.get("id")
+                                if pl_id:
+                                    logger.info(
+                                        "🗑️  Deleting stale LB weekly playlist: %s (id: %s, week of %s)",
+                                        nd_name,
+                                        pl_id,
+                                        parsed["week_start"],
+                                    )
+                                    if self.nd.delete_playlist(pl_id):
+                                        cleanup_deleted += 1
+                                    else:
+                                        cleanup_failed += 1
+                                        logger.warning(
+                                            "Failed to delete stale LB weekly playlist: %s (id: %s, week of %s)",
+                                            nd_name,
+                                            pl_id,
+                                            parsed["week_start"],
+                                        )
+                        logger.info(
+                            "LB weekly playlist cleanup: scanned=%d matched=%d deleted=%d failed=%d",
+                            cleanup_scanned,
+                            cleanup_matched,
+                            cleanup_deleted,
+                            cleanup_failed,
+                        )
+                    except Exception as e:
+                        logger.warning("Could not clean up stale LB playlists: %s", e)
+                    # --- End cleanup ---
+
                     lb_playlists = self.listenbrainz.get_created_for_you_playlists()
                     for lb_playlist in lb_playlists:
                         # The data is nested inside a "playlist" key
