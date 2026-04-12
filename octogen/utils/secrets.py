@@ -24,10 +24,14 @@ def load_secret(secret_name: str, default: Optional[str] = None) -> Optional[str
     secret_path = Path(f"/run/secrets/{secret_name.lower()}")
     if secret_path.exists():
         try:
-            return secret_path.read_text().strip()
+            value = secret_path.read_text().strip()
+            if value:
+                return value
         except Exception:
             pass
     
     # Fall back to environment variable
-    value = os.getenv(secret_name, default)
+    value = os.getenv(secret_name)
+    if value is not None:
+        value = value.strip()
     return value if value else default
