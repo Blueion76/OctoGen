@@ -1595,20 +1595,33 @@ CRITICAL RULES:
                     # Create the playlist if we have songs
                     if period_songs:
                         logger.info(f"Creating {playlist_name} with {len(period_songs)} songs...")
+                        playlists_before = self.stats["playlists_created"]
                         self.create_playlist(playlist_name, period_songs, max_songs=playlist_size)
-                        
-                        # Record generation
-                        record_period_playlist_generation(current_period, playlist_name, BASE_DIR)
-                        
-                        # Track in service summary
-                        self.service_tracker.record(
-                            "timeofday_playlist",
-                            success=True,
-                            playlists=1,
-                            songs=len(period_songs),
-                            period=current_period
-                        )
-                        logger.info(f"✅ Time-of-day playlist created: {playlist_name}")
+                        playlist_was_created = self.stats["playlists_created"] > playlists_before
+
+                        if playlist_was_created:
+                            # create_playlist no-ops if all candidates are unmatched
+                            # and downloads are disabled (nd.create_playlist never runs).
+                            record_period_playlist_generation(current_period, playlist_name, BASE_DIR)
+
+                            self.service_tracker.record(
+                                "timeofday_playlist",
+                                success=True,
+                                playlists=1,
+                                songs=len(period_songs),
+                                period=current_period
+                            )
+                            logger.info(f"✅ Time-of-day playlist created: {playlist_name}")
+                        else:
+                            logger.warning(
+                                f"Time-of-day playlist not created: no library matches for {playlist_name} "
+                                f"({len(period_songs)} candidates, none matched in library)"
+                            )
+                            self.service_tracker.record(
+                                "timeofday_playlist",
+                                success=False,
+                                reason="No library matches for any candidate songs"
+                            )
                     else:
                         logger.warning("No songs generated for time-period playlist")
                         self.service_tracker.record(
