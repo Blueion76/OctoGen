@@ -1035,6 +1035,26 @@ AUDIOMUSE_AI_API_KEY=your_gemini_api_key_here
 
 ---
 
+### AUDIOMUSE_API_TOKEN
+**Description**: Bearer token for authenticating to AudioMuse-AI itself  
+**Type**: String  
+**Default**: Empty  
+**Example**:
+```bash
+AUDIOMUSE_API_TOKEN=4e1ad730643f5e1043...
+```
+**Notes**:
+- Required when AudioMuse-AI runs with `AUTH_ENABLED=true` and an `API_TOKEN` configured
+- Sent as `Authorization: Bearer <token>` on every request to AudioMuse-AI
+  (`/api/config` health check and `/chat/api/chatPlaylist` playlist generation)
+- Leave empty when AudioMuse-AI has authentication disabled
+- This is *separate* from `AUDIOMUSE_AI_API_KEY` (which is the
+  Gemini/OpenAI/Mistral key passed in the request body so AudioMuse can call
+  the LLM on OctoGen’s behalf)
+- Also supports Docker secrets via `AUDIOMUSE_API_TOKEN_FILE`
+
+---
+
 ### AUDIOMUSE_SONGS_PER_MIX
 **Description**: Number of songs from AudioMuse-AI per hybrid playlist  
 **Type**: Integer  
@@ -1309,7 +1329,7 @@ docker logs octogen | grep "Timezone:"
 | **Templates** | 1 | PLAYLIST_TEMPLATES_FILE |
 | **Last.fm** | 3 | LASTFM_ENABLED, LASTFM_API_KEY, LASTFM_USERNAME |
 | **ListenBrainz** | 3 | LISTENBRAINZ_ENABLED, LISTENBRAINZ_USERNAME, LISTENBRAINZ_TOKEN |
-| **AudioMuse-AI** | 7 | AUDIOMUSE_ENABLED, AUDIOMUSE_URL, AUDIOMUSE_AI_PROVIDER, AUDIOMUSE_AI_MODEL, AUDIOMUSE_AI_API_KEY, AUDIOMUSE_SONGS_PER_MIX, LLM_SONGS_PER_MIX |
+| **AudioMuse-AI** | 8 | AUDIOMUSE_ENABLED, AUDIOMUSE_URL, AUDIOMUSE_AI_PROVIDER, AUDIOMUSE_AI_MODEL, AUDIOMUSE_AI_API_KEY, AUDIOMUSE_API_TOKEN, AUDIOMUSE_SONGS_PER_MIX, LLM_SONGS_PER_MIX |
 | **Spotify Import** | 4 | SPOTIFY_IMPORT_ENABLED, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, SPOTIFY_PLAYLIST_URLS |
 | **Deezer Import** | 2 | DEEZER_IMPORT_ENABLED, DEEZER_PLAYLIST_URLS |
 | **Performance** | 5 | PERF_ALBUM_BATCH_SIZE, PERF_MAX_ALBUMS_SCAN, PERF_SCAN_TIMEOUT, PERF_DOWNLOAD_DELAY, PERF_POST_SCAN_DELAY |
