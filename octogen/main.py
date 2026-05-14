@@ -36,7 +36,7 @@ from octogen.api.listenbrainz import ListenBrainzAPI
 from octogen.api.audiomuse import AudioMuseClient
 from octogen.api.spotify import SpotifyImporter
 from octogen.api.deezer import DeezerImporter
-from octogen.ai.engine import AIRecommendationEngine
+from octogen.ai.engine import AIRecommendationEngine, GEMINI_SDK_AVAILABLE
 from octogen.models.tracker import ServiceTracker, RunTracker
 from octogen.web.health import write_health_status
 from octogen.scheduler.cron import calculate_next_run, wait_until, calculate_cron_interval
