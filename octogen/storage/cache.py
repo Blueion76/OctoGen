@@ -49,6 +49,16 @@ class RatingsCache:
                     value TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS missing_artists (
+                    artist TEXT PRIMARY KEY,
+                    artist_display TEXT NOT NULL,
+                    missing_count INTEGER NOT NULL DEFAULT 0,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    pushed_to_lidarr TEXT
+                )
+            """)
             conn.commit()
 
     def get_last_scan_date(self) -> Optional[str]:
@@ -119,3 +129,59 @@ class RatingsCache:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM ratings")
             conn.commit()
+
+    @staticmethod
+    def _normalize_artist(name: str) -> str:
+        return name.strip().lower()
+
+    def record_missing_track(self, artist: str) -> int:
+        """Record that a track by `artist` was missing.
+
+        Increments the count for that artist (case-insensitive, whitespace-trimmed).
+        Returns the new count.
+        """
+        key = self._normalize_artist(artist)
+        display = artist.strip()
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT missing_count FROM missing_artists WHERE artist=?",
+                (key,),
+            ).fetchone()
+            if row:
+                new_count = row[0] + 1
+                conn.execute(
+                    "UPDATE missing_artists SET missing_count=?, last_seen=? WHERE artist=?",
+                    (new_count, now, key),
+                )
+            else:
+                new_count = 1
+                conn.execute(
+                    """INSERT INTO missing_artists
+                       (artist, artist_display, missing_count, first_seen, last_seen)
+                       VALUES (?, ?, 1, ?, ?)""",
+                    (key, display, now, now),
+                )
+            conn.commit()
+        return new_count
+
+    def mark_pushed(self, artist: str) -> None:
+        """Mark an artist as pushed to Lidarr."""
+        key = self._normalize_artist(artist)
+        now = datetime.utcnow().isoformat(timespec="seconds")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE missing_artists SET pushed_to_lidarr=? WHERE artist=?",
+                (now, key),
+            )
+            conn.commit()
+
+    def get_pending_pushes(self, threshold: int) -> List[str]:
+        """Return display names of artists at/above threshold and not yet pushed."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT artist_display FROM missing_artists
+                   WHERE missing_count >= ? AND pushed_to_lidarr IS NULL""",
+                (threshold,),
+            ).fetchall()
+        return [r[0] for r in rows]
