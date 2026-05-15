@@ -2,7 +2,7 @@
 
 import sqlite3
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -142,7 +142,7 @@ class RatingsCache:
         """
         key = self._normalize_artist(artist)
         display = artist.strip()
-        now = datetime.utcnow().isoformat(timespec="seconds")
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT missing_count FROM missing_artists WHERE artist=?",
@@ -168,7 +168,7 @@ class RatingsCache:
     def mark_pushed(self, artist: str) -> None:
         """Mark an artist as pushed to Lidarr."""
         key = self._normalize_artist(artist)
-        now = datetime.utcnow().isoformat(timespec="seconds")
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE missing_artists SET pushed_to_lidarr=? WHERE artist=?",
