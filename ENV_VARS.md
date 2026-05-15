@@ -1361,6 +1361,50 @@ docker logs octogen | grep "Timezone:"
 
 ---
 
+## Lidarr Bridge
+
+Optional integration: when configured, OctoGen pushes the artist of any missing track to Lidarr after a configurable threshold of misses across runs. Failures never block playlist generation.
+
+### LIDARR_URL
+**Description**: Lidarr server URL. Setting this enables the bridge.
+**Default**: unset (bridge disabled)
+**Format**: `http://hostname:port`
+**Example**:
+```bash
+LIDARR_URL=http://lidarr:8686
+```
+
+### LIDARR_API_KEY
+**Description**: Lidarr API key (Settings → General).
+**Required when**: `LIDARR_URL` is set.
+
+### LIDARR_QUALITY_PROFILE
+**Description**: Lidarr quality profile name (e.g. `Standard`). Resolved to ID at startup.
+**Required when**: `LIDARR_URL` is set.
+
+### LIDARR_METADATA_PROFILE
+**Description**: Lidarr metadata profile name. Resolved to ID at startup.
+**Required when**: `LIDARR_URL` is set.
+
+### LIDARR_MIN_MISSING
+**Description**: Number of missing-track encounters before pushing the artist to Lidarr.
+**Default**: `3`
+**Notes**: Counts persist across runs in OctoGen's SQLite cache.
+
+### LIDARR_ADD_MONITORED
+**Description**: Whether artists added by OctoGen are monitored in Lidarr.
+**Default**: `false` (safer — opt in to downloads via the Lidarr UI)
+
+### LIDARR_TAG
+**Description**: Tag applied to every artist OctoGen adds to Lidarr.
+**Default**: `octogen`
+**Notes**:
+- Created in Lidarr if it doesn't exist.
+- Empty string disables tagging.
+- Lets you filter / bulk-clean OctoGen-added artists later.
+
+---
+
 ## 📊 Variable Summary
 
 | Category | Count | Variables |
