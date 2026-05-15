@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from octogen.utils.secrets import load_secret
 from octogen.models.config_models import (
     OctoGenConfig, NavidromeConfig, OctoFiestaConfig, AIConfig,
-    LastFMConfig, ListenBrainzConfig, AudioMuseConfig,
+    LastFMConfig, LidarrConfig, ListenBrainzConfig, AudioMuseConfig,
     SpotifyConfig, DeezerConfig,
     PerformanceConfig, SchedulingConfig, MonitoringConfig,
     WebUIConfig, LoggingConfig
@@ -75,6 +75,16 @@ def load_config_from_env() -> Dict:
             "enabled": os.getenv("LASTFM_ENABLED", "false").lower() == "true",
             "api_key": load_secret("LASTFM_API_KEY"),
             "username": os.getenv("LASTFM_USERNAME"),
+        },
+        "lidarr": {
+            "enabled": bool(load_secret("LIDARR_URL")),
+            "url": load_secret("LIDARR_URL"),
+            "api_key": load_secret("LIDARR_API_KEY"),
+            "min_missing": int(os.getenv("LIDARR_MIN_MISSING", "3")),
+            "add_monitored": os.getenv("LIDARR_ADD_MONITORED", "false").lower() == "true",
+            "tag": os.getenv("LIDARR_TAG", "octogen"),
+            "quality_profile": os.getenv("LIDARR_QUALITY_PROFILE"),
+            "metadata_profile": os.getenv("LIDARR_METADATA_PROFILE"),
         },
         "listenbrainz": {
             "enabled": os.getenv("LISTENBRAINZ_ENABLED", "false").lower() == "true",
@@ -148,6 +158,7 @@ def validate_config(config: Dict) -> Optional[OctoGenConfig]:
             octofiesta=OctoFiestaConfig(**config["octofiesta"]),
             ai=AIConfig(**config["ai"]) if config["ai"]["api_key"] else None,
             lastfm=LastFMConfig(**config["lastfm"]) if config["lastfm"]["enabled"] else None,
+            lidarr=LidarrConfig(**config["lidarr"]) if config["lidarr"]["enabled"] else None,
             listenbrainz=ListenBrainzConfig(**config["listenbrainz"]) if config["listenbrainz"]["enabled"] else None,
             audiomuse=AudioMuseConfig(**config["audiomuse"]) if config["audiomuse"]["enabled"] else None,
             spotify=SpotifyConfig(**config["spotify"]) if config.get("spotify", {}).get("enabled") else None,
