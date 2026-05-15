@@ -80,7 +80,7 @@ See [AudioMuse-AI Setup](#-audiomuse-ai-setup-optional) below.
 ### 🎯 Smart Features
 - **Star rating filtering**: Excludes 1-2 star rated songs
 - **Duplicate detection**: No repeated tracks across playlists
-- **Automatic downloads**: Missing songs fetched via Octo-Fiesta
+- **Optional Octo-Fiesta integration** — auto-download missing tracks, or run local-only with `OCTOFIESTA_ENABLED=false`
 - **Daily cache**: Efficient library scanning
 - **Async operations**: Fast, parallel processing
 - **LastFM, ListenBrainz & AudioMuse-AI**: Optional integrations

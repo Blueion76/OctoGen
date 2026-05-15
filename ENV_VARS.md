@@ -47,6 +47,20 @@ NAVIDROME_PASSWORD=your_secure_password
 
 ---
 
+### OCTOFIESTA_ENABLED
+**Description**: Enable Octo-Fiesta downloads for missing tracks
+**Default**: `true`
+**Options**: `true`, `false`
+**Example**:
+```bash
+OCTOFIESTA_ENABLED=false
+```
+**Notes**:
+- When `false`, OctoGen runs in local-only mode: missing tracks are excluded from playlists and `OCTOFIESTA_URL` is not required.
+- One summary line per run reports the skip count.
+
+---
+
 ### OCTOFIESTA_URL
 **Description**: URL of your Octo-Fiesta server  
 **Format**: `http://hostname:port`  
@@ -58,6 +72,7 @@ OCTOFIESTA_URL=http://octo-fiesta:8080
 **Notes**:
 - Required for automatic downloading of missing tracks
 - Uses same Navidrome credentials
+- Required only when `OCTOFIESTA_ENABLED=true` (the default).
 
 ---
 
