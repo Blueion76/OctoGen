@@ -98,3 +98,65 @@ class LidarrClient:
         )
         resp.raise_for_status()
         return resp.json()["id"]
+
+    # -- add artist ---------------------------------------------------------
+
+    def add_artist(self, artist_name: str) -> tuple:
+        """Look up artist in MusicBrainz via Lidarr, then add it.
+
+        Returns (success: bool, message: str). Never raises — call site
+        treats this as a side effect of playlist generation.
+        """
+        if self.dry_run:
+            logger.info(
+                "Lidarr (dry-run): would add %s (monitored=%s, tag=%s)",
+                artist_name, self.monitored, self.tag,
+            )
+            return True, "dry-run"
+
+        try:
+            # 1. MusicBrainz lookup via Lidarr
+            resp = self.session.get(
+                f"{self.url}/api/v1/artist/lookup",
+                params={"term": artist_name},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            results = resp.json()
+            if not results:
+                logger.warning("Lidarr: artist %r not found in MusicBrainz", artist_name)
+                return False, f"not found: {artist_name}"
+            match = results[0]
+
+            # 2. Add artist
+            payload = {
+                "foreignArtistId": match["foreignArtistId"],
+                "artistName": match.get("artistName", artist_name),
+                "qualityProfileId": self.quality_profile_id,
+                "metadataProfileId": self.metadata_profile_id,
+                "rootFolderPath": self.root_folder_path,
+                "monitored": self.monitored,
+                "tags": [self.tag_id] if self.tag_id else [],
+                "addOptions": {
+                    "monitor": "all" if self.monitored else "none",
+                    "searchForMissingAlbums": False,
+                },
+            }
+            resp = self.session.post(
+                f"{self.url}/api/v1/artist", json=payload, timeout=15
+            )
+            if resp.status_code == 409:
+                logger.info("Lidarr: %s already exists", artist_name)
+                return True, "already exists"
+            if not resp.ok:
+                logger.warning(
+                    "Lidarr add %s failed (%d): %s",
+                    artist_name, resp.status_code, resp.text[:200],
+                )
+                return False, f"HTTP {resp.status_code}"
+            logger.info("Lidarr: added %s", artist_name)
+            return True, "added"
+
+        except (RequestException, ValueError, KeyError) as e:
+            logger.warning("Lidarr add %s error: %s", artist_name, e)
+            return False, str(e)

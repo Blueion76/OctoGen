@@ -81,3 +81,100 @@ class TestValidate:
             ]
             with pytest.raises(RuntimeError, match="root folder"):
                 client.validate()
+
+
+def _validated_client(monitored=False, dry_run=False):
+    c = LidarrClient(
+        url="http://lidarr.test",
+        api_key="abc123",
+        quality_profile="Standard",
+        metadata_profile="Standard",
+        tag="octogen",
+        monitored=monitored,
+        dry_run=dry_run,
+    )
+    # Skip the network round-trip
+    c.quality_profile_id = 1
+    c.metadata_profile_id = 2
+    c.root_folder_path = "/music"
+    c.tag_id = 7
+    return c
+
+
+class TestAddArtist:
+
+    def test_add_artist_success_payload(self):
+        client = _validated_client(monitored=False)
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            mock_get.return_value = _mock_response(200, [
+                {"foreignArtistId": "mb-001", "artistName": "Foo Fighters"}
+            ])
+            mock_post.return_value = _mock_response(201, {"id": 99})
+
+            success, msg = client.add_artist("Foo Fighters")
+
+        assert success is True
+        assert mock_post.call_count == 1
+        sent = mock_post.call_args.kwargs["json"]
+        assert sent["foreignArtistId"] == "mb-001"
+        assert sent["qualityProfileId"] == 1
+        assert sent["metadataProfileId"] == 2
+        assert sent["rootFolderPath"] == "/music"
+        assert sent["monitored"] is False
+        assert sent["tags"] == [7]
+        assert sent["addOptions"]["searchForMissingAlbums"] is False
+
+    def test_add_artist_409_treated_as_success(self):
+        client = _validated_client()
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            mock_get.return_value = _mock_response(200, [
+                {"foreignArtistId": "mb-001", "artistName": "Foo Fighters"}
+            ])
+            mock_post.return_value = _mock_response(409, {"message": "already exists"})
+
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is True
+        assert "already" in msg.lower()
+
+    def test_add_artist_5xx_returns_failure_no_raise(self):
+        client = _validated_client()
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            mock_get.return_value = _mock_response(200, [
+                {"foreignArtistId": "mb-001", "artistName": "Foo Fighters"}
+            ])
+            mock_post.return_value = _mock_response(500)
+
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is False
+
+    def test_add_artist_lookup_empty_returns_failure(self):
+        client = _validated_client()
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get:
+            mock_get.return_value = _mock_response(200, [])
+            success, msg = client.add_artist("Nonexistent")
+        assert success is False
+        assert "not found" in msg.lower()
+
+    def test_add_artist_dry_run_no_http(self):
+        client = _validated_client(dry_run=True)
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is True
+        assert "dry" in msg.lower()
+        mock_get.assert_not_called()
+        mock_post.assert_not_called()
+
+    def test_add_artist_lookup_missing_foreign_id_returns_failure(self):
+        client = _validated_client()
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            mock_get.return_value = _mock_response(200, [
+                {"artistName": "Foo Fighters"}  # missing foreignArtistId
+            ])
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is False
+        mock_post.assert_not_called()
