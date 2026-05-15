@@ -60,6 +60,9 @@ class RatingsCache:
                     push_attempt_count INTEGER NOT NULL DEFAULT 0
                 )
             """)
+            # Idempotent migration for DBs created before push_attempt_count
+            # existed in CREATE TABLE — duplicate-column raises OperationalError
+            # which we swallow.
             try:
                 conn.execute(
                     "ALTER TABLE missing_artists ADD COLUMN "
@@ -212,3 +215,19 @@ class RatingsCache:
                 (threshold, max_attempts),
             ).fetchall()
         return [r[0] for r in rows]
+
+    def is_pending_push(
+        self, artist: str, threshold: int, max_attempts: int = 5
+    ) -> bool:
+        """True if `artist` is at/above threshold, not yet pushed, and below max attempts."""
+        key = self._normalize_artist(artist)
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT 1 FROM missing_artists
+                   WHERE artist = ?
+                     AND missing_count >= ?
+                     AND pushed_to_lidarr IS NULL
+                     AND push_attempt_count < ?""",
+                (key, threshold, max_attempts),
+            ).fetchone()
+        return row is not None

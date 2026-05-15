@@ -489,25 +489,19 @@ class OctoGenEngine:
                     artist, type(e).__name__, e, exc_info=True,
                 )
             else:
-                if count >= threshold:
-                    pending = set(self.ratings_cache.get_pending_pushes(threshold))
-                    if artist.strip() in pending or any(
-                        a.lower() == artist.strip().lower() for a in pending
-                    ):
-                        try:
-                            success, _msg = self.lidarr.add_artist(artist)
-                        except Exception as e:
-                            logger.warning(
-                                "Lidarr push error for %r: %s", artist, e,
-                            )
-                        else:
-                            if success:
-                                self.ratings_cache.mark_pushed(artist)
-                                self.stats["lidarr_added"] += 1
-                            else:
-                                self.ratings_cache.increment_push_attempt(artist)
-                else:
+                if count < threshold:
                     self.stats["lidarr_below_threshold"] += 1
+                elif self.ratings_cache.is_pending_push(artist, threshold):
+                    try:
+                        success, _msg = self.lidarr.add_artist(artist)
+                    except Exception as e:
+                        logger.warning("Lidarr push error for %r: %s", artist, e)
+                    else:
+                        if success:
+                            self.ratings_cache.mark_pushed(artist)
+                            self.stats["lidarr_added"] += 1
+                        else:
+                            self.ratings_cache.increment_push_attempt(artist)
 
         if self.octo is None:
             self.stats["fiesta_skipped"] += 1
