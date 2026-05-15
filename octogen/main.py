@@ -89,12 +89,16 @@ class OctoGenEngine:
             logger.error("Cannot connect to Navidrome")
             sys.exit(1)
 
-        self.octo = OctoFiestaTrigger(
-            self.config["octofiesta"]["url"],
-            self.config["navidrome"]["username"],
-            self.config["navidrome"]["password"],
-            dry_run=dry_run
-        )
+        if self.config["octofiesta"]["enabled"]:
+            self.octo = OctoFiestaTrigger(
+                self.config["octofiesta"]["url"],
+                self.config["navidrome"]["username"],
+                self.config["navidrome"]["password"],
+                dry_run=dry_run
+            )
+        else:
+            self.octo = None
+            logger.info("✓ Octo-Fiesta: disabled (OCTOFIESTA_ENABLED=false) — local-only mode")
 
         # Initialize AI engine (optional if other services are configured)
         self.ai = None
@@ -193,6 +197,7 @@ class OctoGenEngine:
             "songs_skipped_duplicate": 0,
             "duplicates_prevented": 0,
             "ai_calls": 0,
+            "fiesta_skipped": 0,
         }
 
         # Track processed songs to avoid duplicates
@@ -210,12 +215,14 @@ class OctoGenEngine:
         logger.info("Loading configuration from environment variables...")
 
         # Check required variables (except AI_API_KEY which is now optional)
+        octofiesta_enabled = self._get_env_bool("OCTOFIESTA_ENABLED", True)
         required_vars = [
             "NAVIDROME_URL",
             "NAVIDROME_USER",
             "NAVIDROME_PASSWORD",
-            "OCTOFIESTA_URL"
         ]
+        if octofiesta_enabled:
+            required_vars.append("OCTOFIESTA_URL")
 
         missing = [var for var in required_vars if not os.getenv(var)]
         if missing:
@@ -225,7 +232,7 @@ class OctoGenEngine:
             logger.error("  NAVIDROME_URL       - Navidrome server URL")
             logger.error("  NAVIDROME_USER      - Navidrome username")
             logger.error("  NAVIDROME_PASSWORD  - Navidrome password")
-            logger.error("  OCTOFIESTA_URL      - Octo-Fiesta server URL")
+            logger.error("  OCTOFIESTA_URL      - Octo-Fiesta server URL (when OCTOFIESTA_ENABLED=true)")
             logger.error("")
             logger.error("See ENV_VARS.md for complete reference")
             sys.exit(1)
@@ -237,7 +244,8 @@ class OctoGenEngine:
                 "password": os.getenv("NAVIDROME_PASSWORD")
             },
             "octofiesta": {
-                "url": os.getenv("OCTOFIESTA_URL")
+                "enabled": octofiesta_enabled,
+                "url": os.getenv("OCTOFIESTA_URL") if octofiesta_enabled else None,
             },
             "ai": {
                 "api_key": os.getenv("AI_API_KEY", ""),
@@ -288,7 +296,8 @@ class OctoGenEngine:
 
         # Log configuration (without secrets)
         logger.info("✓ Navidrome: %s", config['navidrome']['url'])
-        logger.info("✓ Octo-Fiesta: %s", config['octofiesta']['url'])
+        if config['octofiesta']['enabled']:
+            logger.info("✓ Octo-Fiesta: %s", config['octofiesta']['url'])
         if config['lastfm']['enabled']:
             logger.info("✓ Last.fm enabled: %s", config['lastfm']['username'])
         if config['listenbrainz']['enabled']:
@@ -356,10 +365,10 @@ class OctoGenEngine:
         logger.info("✓ Music sources: %s", ", ".join(sources))
         
         # Validate URLs
-        for name, url in [
-            ("Navidrome", self.config["navidrome"]["url"]),
-            ("Octo-Fiesta", self.config["octofiesta"]["url"])
-        ]:
+        services = [("Navidrome", self.config["navidrome"]["url"])]
+        if self.config["octofiesta"]["enabled"]:
+            services.append(("Octo-Fiesta", self.config["octofiesta"]["url"]))
+        for name, url in services:
             if not url:
                 errors.append(f"{name} URL is empty")
             elif not url.startswith(("http://", "https://")):
@@ -606,6 +615,10 @@ class OctoGenEngine:
         if self.dry_run:
             return None
 
+        if self.octo is None:
+            self.stats["fiesta_skipped"] += 1
+            self.stats["songs_failed"] += 1
+            return None
         success, _result = self.octo.search_and_trigger_download(artist, title)
 
         if not success:
@@ -718,6 +731,9 @@ class OctoGenEngine:
                     if d_idx % 5 == 0 or d_idx == 1 or d_idx == len(needs_download):
                         logger.info(" [%s] Download progress: %d/%d", playlist_name, d_idx, len(needs_download))
     
+                    if self.octo is None:
+                        self.stats["fiesta_skipped"] += 1
+                        continue
                     success, _result = self.octo.search_and_trigger_download(artist, title)
                     if success:
                         downloaded_count += 1
@@ -1689,6 +1705,9 @@ CRITICAL RULES:
             logger.info("Songs skipped (low rating): %d", self.stats["songs_skipped_low_rating"])
             logger.info("Songs skipped (duplicate): %d", self.stats["songs_skipped_duplicate"])
             logger.info("Songs failed: %d", self.stats["songs_failed"])
+            if not self.config["octofiesta"]["enabled"]:
+                logger.info("Local-only mode: skipped %d download attempts for missing tracks",
+                            self.stats.get("fiesta_skipped", 0))
             logger.info("=" * 70)
             
             # Record successful run
