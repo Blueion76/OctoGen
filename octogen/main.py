@@ -479,26 +479,36 @@ class OctoGenEngine:
         call sites. Lidarr push is a side-effect — failures are logged and
         ignored.
         """
-        # 1. Lidarr bridge (independent of fiesta)
         if self.lidarr is not None:
             try:
                 count = self.ratings_cache.record_missing_track(artist)
                 threshold = self.config["lidarr"]["min_missing"]
+            except Exception as e:
+                logger.error(
+                    "Missing-artist DB error for %r (%s): %s",
+                    artist, type(e).__name__, e, exc_info=True,
+                )
+            else:
                 if count >= threshold:
                     pending = set(self.ratings_cache.get_pending_pushes(threshold))
                     if artist.strip() in pending or any(
                         a.lower() == artist.strip().lower() for a in pending
                     ):
-                        success, _msg = self.lidarr.add_artist(artist)
-                        if success:
-                            self.ratings_cache.mark_pushed(artist)
-                            self.stats["lidarr_added"] += 1
+                        try:
+                            success, _msg = self.lidarr.add_artist(artist)
+                        except Exception as e:
+                            logger.warning(
+                                "Lidarr push error for %r: %s", artist, e,
+                            )
+                        else:
+                            if success:
+                                self.ratings_cache.mark_pushed(artist)
+                                self.stats["lidarr_added"] += 1
+                            else:
+                                self.ratings_cache.increment_push_attempt(artist)
                 else:
                     self.stats["lidarr_below_threshold"] += 1
-            except Exception as e:
-                logger.warning("Lidarr bridge error for %s: %s", artist, e)
 
-        # 2. Fiesta download (existing behaviour)
         if self.octo is None:
             self.stats["fiesta_skipped"] += 1
             return False, "fiesta-disabled"

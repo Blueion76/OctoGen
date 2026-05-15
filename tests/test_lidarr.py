@@ -82,6 +82,14 @@ class TestValidate:
             with pytest.raises(RuntimeError, match="root folder"):
                 client.validate()
 
+    def test_validate_wraps_unexpected_response_shape(self, client):
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get:
+            mock_get.return_value = _mock_response(
+                200, [{"name": "Standard"}]  # missing 'id'
+            )
+            with pytest.raises(RuntimeError, match="unexpected response shape"):
+                client.validate()
+
 
 def _validated_client(monitored=False, dry_run=False):
     c = LidarrClient(
@@ -178,3 +186,43 @@ class TestAddArtist:
             success, msg = client.add_artist("Foo Fighters")
         assert success is False
         mock_post.assert_not_called()
+
+    def test_add_artist_request_exception_returns_failure(self):
+        from requests.exceptions import ConnectionError as ReqConnError
+        client = _validated_client()
+        with patch(
+            "octogen.api.lidarr.requests.Session.get",
+            side_effect=ReqConnError("network down"),
+        ):
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is False
+        assert "network down" in msg
+
+    def test_add_artist_value_error_swallowed(self):
+        client = _validated_client()
+        bad_resp = MagicMock()
+        bad_resp.status_code = 200
+        bad_resp.ok = True
+        bad_resp.raise_for_status.return_value = None
+        bad_resp.json.side_effect = ValueError("not json")
+        with patch(
+            "octogen.api.lidarr.requests.Session.get", return_value=bad_resp,
+        ):
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is False
+        assert "not json" in msg
+
+    def test_add_artist_before_validate_returns_failure(self):
+        client = LidarrClient(
+            url="http://lidarr.test",
+            api_key="abc123",
+            quality_profile="Standard",
+            metadata_profile="Standard",
+            tag="octogen",
+            monitored=False,
+        )
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get:
+            success, msg = client.add_artist("Foo Fighters")
+        assert success is False
+        assert "validate" in msg.lower()
+        mock_get.assert_not_called()

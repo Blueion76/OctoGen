@@ -3,6 +3,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from octogen.config import load_config_from_env
 from octogen.main import OctoGenEngine
 
@@ -59,11 +61,10 @@ class TestOctoFiestaToggle:
         """When OCTOFIESTA_ENABLED is unset, OCTOFIESTA_URL must be present (back-compat)."""
         env = {k: v for k, v in _REQUIRED_ENV.items() if k != "OCTOFIESTA_URL"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("octogen.config.sys.exit") as mock_exit:
-                result = load_config_from_env()
+            with patch("octogen.config.sys.exit", side_effect=SystemExit(1)) as mock_exit:
+                with pytest.raises(SystemExit):
+                    load_config_from_env()
                 mock_exit.assert_called_once_with(1)
-        # Confirm nothing meaningful was returned after the mocked exit
-        assert result["octofiesta"]["url"] is None
 
 
 class TestLidarrConfig:

@@ -77,3 +77,24 @@ class TestGetPendingPushes:
             cache.record_missing_track("Foo Fighters")
         cache.mark_pushed("Foo Fighters")
         assert cache.get_pending_pushes(threshold=3) == []
+
+
+class TestPushAttemptCap:
+
+    def test_increment_push_attempt_returns_count(self, cache):
+        cache.record_missing_track("Foo Fighters")
+        assert cache.increment_push_attempt("Foo Fighters") == 1
+        assert cache.increment_push_attempt("Foo Fighters") == 2
+
+    def test_pending_excludes_after_max_attempts(self, cache):
+        for _ in range(3):
+            cache.record_missing_track("Foo Fighters")
+        for _ in range(5):
+            cache.increment_push_attempt("Foo Fighters")
+        assert cache.get_pending_pushes(threshold=3, max_attempts=5) == []
+
+    def test_pending_includes_below_max_attempts(self, cache):
+        for _ in range(3):
+            cache.record_missing_track("Foo Fighters")
+        cache.increment_push_attempt("Foo Fighters")
+        assert cache.get_pending_pushes(threshold=3, max_attempts=5) == ["Foo Fighters"]

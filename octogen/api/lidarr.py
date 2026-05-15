@@ -38,7 +38,6 @@ class LidarrClient:
         self.session = requests.Session()
         self.session.headers.update({"X-Api-Key": api_key})
 
-        # Resolved during validate()
         self.quality_profile_id: Optional[int] = None
         self.metadata_profile_id: Optional[int] = None
         self.root_folder_path: Optional[str] = None
@@ -63,6 +62,10 @@ class LidarrClient:
                 self.tag_id = self._ensure_tag(self.tag)
         except RequestException as e:
             raise RuntimeError(f"Lidarr unreachable at {self.url}: {e}") from e
+        except (KeyError, ValueError, IndexError) as e:
+            raise RuntimeError(
+                f"Lidarr returned unexpected response shape: {type(e).__name__}: {e}"
+            ) from e
 
     def _resolve_profile(self, kind: str, name: str, env_name: str) -> int:
         resp = self.session.get(f"{self.url}/api/v1/{kind}", timeout=10)
@@ -84,7 +87,12 @@ class LidarrClient:
             raise RuntimeError(
                 "Lidarr has no root folder configured — add one in Lidarr settings"
             )
-        return folders[0]["path"]
+        path = folders[0]["path"]
+        if len(folders) > 1:
+            logger.info(
+                "Lidarr: %d root folders configured, using %s", len(folders), path,
+            )
+        return path
 
     def _ensure_tag(self, label: str) -> int:
         resp = self.session.get(f"{self.url}/api/v1/tag", timeout=10)
@@ -92,7 +100,6 @@ class LidarrClient:
         for t in resp.json():
             if t.get("label") == label:
                 return t["id"]
-        # Create it
         resp = self.session.post(
             f"{self.url}/api/v1/tag", json={"label": label}, timeout=10
         )
@@ -106,7 +113,13 @@ class LidarrClient:
 
         Returns (success: bool, message: str). Never raises — call site
         treats this as a side effect of playlist generation.
+        Catches RequestException (network), ValueError (non-JSON body), and
+        KeyError (missing foreignArtistId in lookup result) to uphold the
+        never-raises contract.
         """
+        if self.quality_profile_id is None:
+            return False, "validate() not called"
+
         if self.dry_run:
             logger.info(
                 "Lidarr (dry-run): would add %s (monitored=%s, tag=%s)",
@@ -115,7 +128,6 @@ class LidarrClient:
             return True, "dry-run"
 
         try:
-            # 1. MusicBrainz lookup via Lidarr
             resp = self.session.get(
                 f"{self.url}/api/v1/artist/lookup",
                 params={"term": artist_name},
@@ -128,7 +140,6 @@ class LidarrClient:
                 return False, f"not found: {artist_name}"
             match = results[0]
 
-            # 2. Add artist
             payload = {
                 "foreignArtistId": match["foreignArtistId"],
                 "artistName": match.get("artistName", artist_name),

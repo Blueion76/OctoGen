@@ -56,9 +56,17 @@ class RatingsCache:
                     missing_count INTEGER NOT NULL DEFAULT 0,
                     first_seen TEXT NOT NULL,
                     last_seen TEXT NOT NULL,
-                    pushed_to_lidarr TEXT
+                    pushed_to_lidarr TEXT,
+                    push_attempt_count INTEGER NOT NULL DEFAULT 0
                 )
             """)
+            try:
+                conn.execute(
+                    "ALTER TABLE missing_artists ADD COLUMN "
+                    "push_attempt_count INTEGER NOT NULL DEFAULT 0"
+                )
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
 
     def get_last_scan_date(self) -> Optional[str]:
@@ -176,12 +184,31 @@ class RatingsCache:
             )
             conn.commit()
 
-    def get_pending_pushes(self, threshold: int) -> List[str]:
-        """Return display names of artists at/above threshold and not yet pushed."""
+    def increment_push_attempt(self, artist: str) -> int:
+        """Record a failed push attempt; return new attempt count."""
+        key = self._normalize_artist(artist)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE missing_artists SET push_attempt_count = push_attempt_count + 1 "
+                "WHERE artist=?",
+                (key,),
+            )
+            row = conn.execute(
+                "SELECT push_attempt_count FROM missing_artists WHERE artist=?",
+                (key,),
+            ).fetchone()
+            conn.commit()
+        return row[0] if row else 0
+
+    def get_pending_pushes(self, threshold: int, max_attempts: int = 5) -> List[str]:
+        """Return display names of artists at/above threshold, not yet pushed,
+        and below max failed attempts."""
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute(
                 """SELECT artist_display FROM missing_artists
-                   WHERE missing_count >= ? AND pushed_to_lidarr IS NULL""",
-                (threshold,),
+                   WHERE missing_count >= ?
+                     AND pushed_to_lidarr IS NULL
+                     AND push_attempt_count < ?""",
+                (threshold, max_attempts),
             ).fetchall()
         return [r[0] for r in rows]

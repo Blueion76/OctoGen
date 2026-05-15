@@ -332,14 +332,10 @@ def check_lastfm() -> Dict[str, Any]:
 
 
 def check_lidarr() -> Dict[str, Any]:
-    """Check Lidarr bridge service.
-
-    Returns:
-        Dict with status and message
-    """
+    """Probe Lidarr's /api/v1/system/status endpoint."""
     try:
-        url = os.getenv("LIDARR_URL")
-        api_key = os.getenv("LIDARR_API_KEY")
+        url = load_secret("LIDARR_URL")
+        api_key = load_secret("LIDARR_API_KEY")
 
         if not url:
             return {
@@ -387,10 +383,10 @@ def check_lidarr() -> Dict[str, Any]:
             "healthy": False
         }
     except Exception as e:
-        logger.error(f"Error checking Lidarr: {e}")
+        logger.error("Error checking Lidarr: %s", e)
         return {
             "status": "error",
-            "message": str(e),
+            "message": "Unexpected error",
             "healthy": False
         }
 

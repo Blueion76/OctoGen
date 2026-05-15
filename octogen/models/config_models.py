@@ -182,6 +182,7 @@ class LidarrConfig(BaseModel):
     api_key: Optional[str] = None
     min_missing: int = Field(default=3, ge=1)
     add_monitored: bool = False
+    """When True, Lidarr addOptions.monitor='all'; when False, 'none'."""
     tag: str = "octogen"
     quality_profile: Optional[str] = None
     metadata_profile: Optional[str] = None

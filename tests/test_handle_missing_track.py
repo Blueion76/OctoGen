@@ -94,3 +94,60 @@ def test_octofiesta_called_when_enabled(cache):
     octo.search_and_trigger_download.assert_called_once_with("Foo Fighters", "Everlong")
     assert success is True
     assert engine.stats["fiesta_skipped"] == 0
+
+
+def test_lidarr_active_with_octofiesta_disabled(cache):
+    lidarr = MagicMock()
+    lidarr.add_artist.return_value = (True, "added")
+    engine = _engine_with(cache, lidarr=lidarr, octo=None, min_missing=3)
+
+    for _ in range(3):
+        result = engine._handle_missing_track("Foo Fighters", "Everlong")
+
+    lidarr.add_artist.assert_called_once_with("Foo Fighters")
+    assert engine.stats["lidarr_added"] == 1
+    assert engine.stats["fiesta_skipped"] == 3
+    assert result == (False, "fiesta-disabled")
+
+
+def test_failed_push_does_not_retry_after_max_attempts(cache):
+    lidarr = MagicMock()
+    lidarr.add_artist.return_value = (False, "HTTP 500")
+    engine = _engine_with(cache, lidarr=lidarr, min_missing=3)
+
+    for _ in range(3 + 5):
+        engine._handle_missing_track("Foo Fighters", "Everlong")
+
+    assert lidarr.add_artist.call_count == 5
+    assert engine.stats["lidarr_added"] == 0
+
+
+def test_db_error_during_record_logs_and_continues(cache, caplog):
+    import logging
+    bad_cache = MagicMock()
+    bad_cache.record_missing_track.side_effect = RuntimeError("disk full")
+    octo = MagicMock()
+    octo.search_and_trigger_download.return_value = (True, "downloaded")
+    engine = _engine_with(bad_cache, lidarr=MagicMock(), octo=octo, min_missing=3)
+
+    with caplog.at_level(logging.ERROR):
+        success, _msg = engine._handle_missing_track("Foo Fighters", "Everlong")
+
+    assert success is True
+    assert any("DB error" in rec.message for rec in caplog.records)
+
+
+def test_lidarr_push_exception_logged_and_continues(cache, caplog):
+    import logging
+    lidarr = MagicMock()
+    lidarr.add_artist.side_effect = RuntimeError("unexpected")
+    octo = MagicMock()
+    octo.search_and_trigger_download.return_value = (True, "downloaded")
+    engine = _engine_with(cache, lidarr=lidarr, octo=octo, min_missing=3)
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            engine._handle_missing_track("Foo Fighters", "Everlong")
+
+    assert any("Lidarr push error" in rec.message for rec in caplog.records)
+    assert engine.stats["lidarr_added"] == 0
