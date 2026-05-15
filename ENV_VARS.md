@@ -568,7 +568,7 @@ TIMEOFDAY_ENABLED=true
 - **Night Vibes**: Generates at 10:00 PM only
 - Duplicate prevention: Won't regenerate within 1 hour
 - Respects TZ environment variable for timezone
-- Auto-deletes previous period's playlist when generating new one
+- Auto-deletes previous period's playlist when generating new one (override with `TIMEOFDAY_PLAYLISTS_PERSIST=true`)
 
 ---
 
@@ -614,6 +614,21 @@ TIMEOFDAY_MORNING_START=4
 - **Afternoon (10-16)**: Balanced, productive, moderate energy
 - **Evening (16-22)**: Chill, relaxing, wind-down music
 - **Night (22-4)**: Ambient, calm, sleep-friendly
+
+---
+
+### TIMEOFDAY_PLAYLISTS_PERSIST
+**Description**: Keep all four time-of-day playlists in Navidrome instead of deleting the inactive ones  
+**Default**: `false`  
+**Options**: `true`, `false`  
+**Example**:
+```bash
+TIMEOFDAY_PLAYLISTS_PERSIST=true
+```
+**Notes**:
+- Default (`false`): only the current period's playlist exists at any time; the other three are deleted when a new period generates
+- When `true`: Morning Mix, Afternoon Flow, Evening Chill, and Night Vibes all persist; the current period's playlist is still updated in place on each scheduled run
+- Useful if you want a stable set of mood playlists pinned in your client rather than a single rotating one
 
 ---
 

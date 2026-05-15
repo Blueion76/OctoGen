@@ -38,7 +38,7 @@ Automatic mood-appropriate playlists that rotate based on time of day:
 **Features**:
 - ✅ Hybrid generation: 25 songs from AudioMuse-AI + 5 from LLM
 - ✅ Auto-rotates when time period changes
-- ✅ Auto-deletes previous period's playlist
+- ✅ Auto-deletes previous period's playlist (or keep all four pinned with `TIMEOFDAY_PLAYLISTS_PERSIST=true`)
 - ✅ Configurable time boundaries
 - ✅ LLM prompts enhanced with time-of-day context
 

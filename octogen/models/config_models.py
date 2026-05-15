@@ -112,6 +112,20 @@ class DeezerConfig(BaseModel):
     playlist_urls: str = Field("", description="Comma-separated playlist URLs")
 
 
+class PlaylistsConfig(BaseModel):
+    """Playlist behavior configuration"""
+    time_of_day_persist: bool = Field(
+        False,
+        description=(
+            "When False, generating a new time-of-day playlist deletes the "
+            "other three (Morning Mix / Afternoon Flow / Evening Chill / "
+            "Night Vibes) so only the current period's playlist exists. "
+            "When True, all four persist and the current period's playlist "
+            "is updated in place on each run."
+        ),
+    )
+
+
 class PerformanceConfig(BaseModel):
     """Performance configuration"""
     album_batch_size: int = Field(500, ge=1, le=5000)
@@ -185,6 +199,7 @@ class OctoGenConfig(BaseModel):
     audiomuse: Optional[AudioMuseConfig] = None
     spotify: Optional[SpotifyConfig] = None
     deezer: Optional[DeezerConfig] = None
+    playlists: PlaylistsConfig = Field(default_factory=PlaylistsConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     scheduling: SchedulingConfig = Field(default_factory=SchedulingConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
