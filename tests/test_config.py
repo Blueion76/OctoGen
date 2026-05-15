@@ -49,3 +49,36 @@ class TestLoadConfigFromEnvAITimeout:
         with patch.dict(os.environ, {**_REQUIRED_ENV, "AI_REQUEST_TIMEOUT": "30"}):
             config = load_config_from_env()
         assert config["ai"]["request_timeout"] == 30
+
+
+class TestOctoFiestaToggle:
+    """Tests for OCTOFIESTA_ENABLED toggle."""
+
+    def test_enabled_default_true_requires_url(self):
+        """When OCTOFIESTA_ENABLED is unset, OCTOFIESTA_URL must be present (back-compat)."""
+        env = {k: v for k, v in _REQUIRED_ENV.items() if k != "OCTOFIESTA_URL"}
+        with patch.dict(os.environ, env, clear=True):
+            with patch("octogen.config.sys.exit") as mock_exit:
+                result = load_config_from_env()
+                mock_exit.assert_called_once_with(1)
+        # Confirm nothing meaningful was returned after the mocked exit
+        assert result["octofiesta"]["url"] is None
+
+    def test_enabled_false_makes_url_optional(self):
+        """OCTOFIESTA_ENABLED=false: OCTOFIESTA_URL is no longer required."""
+        env = {k: v for k, v in _REQUIRED_ENV.items() if k != "OCTOFIESTA_URL"}
+        env["OCTOFIESTA_ENABLED"] = "false"
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config_from_env()
+        assert config["octofiesta"]["enabled"] is False
+        assert config["octofiesta"]["url"] is None
+
+    def test_enabled_true_keeps_url_required(self):
+        """OCTOFIESTA_ENABLED=true (explicit): OCTOFIESTA_URL still required."""
+        env = {k: v for k, v in _REQUIRED_ENV.items() if k != "OCTOFIESTA_URL"}
+        env["OCTOFIESTA_ENABLED"] = "true"
+        with patch.dict(os.environ, env, clear=True):
+            with patch("octogen.config.sys.exit") as mock_exit:
+                result = load_config_from_env()
+                mock_exit.assert_called_once_with(1)
+        assert result["octofiesta"]["url"] is None

@@ -27,13 +27,15 @@ def load_config_from_env() -> Dict:
     """
     logger.info("Loading configuration from environment variables...")
 
-    # Check required variables
+    octofiesta_enabled = os.getenv("OCTOFIESTA_ENABLED", "true").lower() == "true"
+
     required_vars = [
         "NAVIDROME_URL",
         "NAVIDROME_USER",
         "NAVIDROME_PASSWORD",
-        "OCTOFIESTA_URL"
     ]
+    if octofiesta_enabled:
+        required_vars.append("OCTOFIESTA_URL")
 
     missing = [var for var in required_vars if not load_secret(var)]
     if missing:
@@ -43,7 +45,9 @@ def load_config_from_env() -> Dict:
         logger.error("  NAVIDROME_URL       - Navidrome server URL")
         logger.error("  NAVIDROME_USER      - Navidrome username")
         logger.error("  NAVIDROME_PASSWORD  - Navidrome password")
-        logger.error("  OCTOFIESTA_URL      - Octo-Fiesta server URL")
+        if octofiesta_enabled:
+            logger.error("  OCTOFIESTA_URL      - Octo-Fiesta server URL")
+            logger.error("                        (set OCTOFIESTA_ENABLED=false to disable downloads)")
         logger.error("")
         logger.error("See ENV_VARS.md for complete reference")
         sys.exit(1)
@@ -55,7 +59,8 @@ def load_config_from_env() -> Dict:
             "password": load_secret("NAVIDROME_PASSWORD"),
         },
         "octofiesta": {
-            "url": load_secret("OCTOFIESTA_URL"),
+            "enabled": octofiesta_enabled,
+            "url": load_secret("OCTOFIESTA_URL") if octofiesta_enabled else None,
         },
         "ai": {
             "api_key": load_secret("AI_API_KEY"),
