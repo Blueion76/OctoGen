@@ -331,6 +331,70 @@ def check_lastfm() -> Dict[str, Any]:
         }
 
 
+def check_lidarr() -> Dict[str, Any]:
+    """Check Lidarr bridge service.
+
+    Returns:
+        Dict with status and message
+    """
+    try:
+        url = os.getenv("LIDARR_URL")
+        api_key = os.getenv("LIDARR_API_KEY")
+
+        if not url:
+            return {
+                "status": "disabled",
+                "message": "Not enabled",
+                "healthy": False
+            }
+
+        if not api_key:
+            return {
+                "status": "error",
+                "message": "Missing configuration",
+                "healthy": False
+            }
+
+        response = requests.get(
+            f"{url}/api/v1/system/status",
+            headers={"X-Api-Key": api_key},
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            return {
+                "status": "healthy",
+                "message": "Connected",
+                "healthy": True
+            }
+
+        return {
+            "status": "warning",
+            "message": f"HTTP {response.status_code}",
+            "healthy": False
+        }
+
+    except requests.exceptions.Timeout:
+        return {
+            "status": "error",
+            "message": "Connection timeout",
+            "healthy": False
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            "status": "error",
+            "message": "Connection refused",
+            "healthy": False
+        }
+    except Exception as e:
+        logger.error(f"Error checking Lidarr: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "healthy": False
+        }
+
+
 def check_listenbrainz() -> Dict[str, Any]:
     """Check ListenBrainz service status.
     
@@ -385,6 +449,7 @@ def get_all_services() -> Dict[str, Dict[str, Any]]:
         "ai": check_ai(),
         "audiomuse": check_audiomuse(),
         "lastfm": check_lastfm(),
+        "lidarr": check_lidarr(),
         "listenbrainz": check_listenbrainz()
     }
 
