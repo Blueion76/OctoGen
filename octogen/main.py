@@ -119,8 +119,15 @@ class OctoGenEngine:
                             self.config["lidarr"]["tag"] or "(none)",
                             self.config["lidarr"]["min_missing"])
             except RuntimeError as e:
-                logger.error("Lidarr bridge validation failed: %s", e)
-                sys.exit(1)
+                # Optional integration: a transient unreachable Lidarr or a
+                # bad profile name should not take down the whole service.
+                # Match the degrade-and-warn pattern used by Last.fm,
+                # ListenBrainz, and AudioMuse.
+                logger.warning(
+                    "Lidarr bridge unavailable: %s. Continuing without it; "
+                    "missing-track artists will not be pushed to Lidarr.", e,
+                )
+                self.lidarr = None
         else:
             self.lidarr = None
 
@@ -495,7 +502,9 @@ class OctoGenEngine:
                     try:
                         success, _msg = self.lidarr.add_artist(artist)
                     except Exception as e:
-                        logger.warning("Lidarr push error for %r: %s", artist, e)
+                        logger.warning(
+                            "Lidarr push error for %r: %s", artist, e, exc_info=True,
+                        )
                     else:
                         if success:
                             self.ratings_cache.mark_pushed(artist)

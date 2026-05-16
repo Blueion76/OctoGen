@@ -82,6 +82,56 @@ class TestValidate:
             with pytest.raises(RuntimeError, match="root folder"):
                 client.validate()
 
+    def test_validate_with_empty_tag_skips_tag_lookup(self):
+        """Setting LIDARR_TAG="" must skip the tag GET/POST entirely so the
+        operator can opt out of OctoGen's auto-tagging without breaking
+        validation."""
+        c = LidarrClient(
+            url="http://lidarr.test",
+            api_key="abc123",
+            quality_profile="Standard",
+            metadata_profile="Standard",
+            tag="",
+            monitored=False,
+        )
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            mock_get.side_effect = [
+                _mock_response(200, [{"id": 1, "name": "Standard"}]),
+                _mock_response(200, [{"id": 2, "name": "Standard"}]),
+                _mock_response(200, [{"id": 5, "path": "/music"}]),
+            ]
+            c.validate()
+        assert c.tag_id is None
+        assert mock_get.call_count == 3  # quality, metadata, root only — no tag
+        mock_post.assert_not_called()
+
+    def test_add_artist_with_empty_tag_sends_empty_tags(self):
+        """When tag is empty, the POST payload must contain an empty tags
+        list (matches the existing dry-run-vs-real-run guard at lidarr.py:150)."""
+        c = LidarrClient(
+            url="http://lidarr.test",
+            api_key="abc123",
+            quality_profile="Standard",
+            metadata_profile="Standard",
+            tag="",
+            monitored=False,
+        )
+        c.quality_profile_id = 1
+        c.metadata_profile_id = 2
+        c.root_folder_path = "/music"
+        c.tag_id = None  # validate() leaves it None when tag=""
+
+        with patch("octogen.api.lidarr.requests.Session.get") as mock_get, \
+             patch("octogen.api.lidarr.requests.Session.post") as mock_post:
+            mock_get.return_value = _mock_response(200, [
+                {"foreignArtistId": "mb-001", "artistName": "Foo Fighters"}
+            ])
+            mock_post.return_value = _mock_response(201, {"id": 99})
+            c.add_artist("Foo Fighters")
+        sent = mock_post.call_args.kwargs["json"]
+        assert sent["tags"] == []
+
     def test_validate_wraps_unexpected_response_shape(self, client):
         with patch("octogen.api.lidarr.requests.Session.get") as mock_get:
             mock_get.return_value = _mock_response(
