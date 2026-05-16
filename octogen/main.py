@@ -1620,6 +1620,7 @@ CRITICAL RULES:
                             self.service_tracker.record(
                                 "timeofday_playlist",
                                 success=False,
+                                period=current_period,
                                 reason="No library matches for any candidate songs"
                             )
                     else:
