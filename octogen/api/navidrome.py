@@ -35,6 +35,13 @@ class NavidromeAPI:
     LIBRARY_SEARCH_LIMIT = 30  # Max songs per search strategy in library search
     SIMILAR_SEARCH_LIMIT = 50  # Max songs for similar song detection
 
+    # Seed-fallback heuristic: estimate how many albums to fetch to cover N
+    # additional songs. Most albums hold ~10 songs; fetch a small buffer so we
+    # don't have to round-trip again if a few albums come up short.
+    AVG_SONGS_PER_ALBUM = 10
+    ALBUM_FETCH_BUFFER = 5
+    MIN_ALBUMS_TO_FETCH = 5
+
     def __init__(self, url: str, username: str, password: str,
                  ratings_cache: RatingsCache, config: dict):
         """Initialize Navidrome API client.
@@ -139,6 +146,11 @@ class NavidromeAPI:
         (Subsonic ``getAlbumList2?type=frequent``) until
         ``SEED_FALLBACK_TARGET`` is reached.
 
+        NOTE: This method is sync and uses ``asyncio.run()`` internally for the
+        parallel album fetch. It cannot be called from inside a running event
+        loop. If a caller is async, it should call
+        ``_fetch_albums_songs_parallel()`` directly via ``await``.
+
         Returns:
             List of seed song dictionaries.
         """
@@ -157,10 +169,14 @@ class NavidromeAPI:
                 {"type": "frequent", "size": self.seed_fallback_album_count},
             )
             albums = (albums_resp or {}).get("albumList2", {}).get("album", [])
-            # Most albums hold ~10+ songs; cap fetch count so we don't make 100 album
-            # requests when ~25 satisfies seed_fallback_target.
             needed = max(0, self.seed_fallback_target - len(songs))
-            estimated_albums = min(len(albums), max(5, (needed // 10) + 5))
+            estimated_albums = min(
+                len(albums),
+                max(
+                    self.MIN_ALBUMS_TO_FETCH,
+                    (needed // self.AVG_SONGS_PER_ALBUM) + self.ALBUM_FETCH_BUFFER,
+                ),
+            )
             albums = albums[:estimated_albums]
             album_ids = [a["id"] for a in albums if a.get("id")]
             album_song_lists = asyncio.run(self._fetch_albums_songs_parallel(album_ids))
@@ -188,16 +204,29 @@ class NavidromeAPI:
                 "Added %d songs from %d most-played albums (total seed: %d)",
                 added, len(albums), len(songs),
             )
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, ValueError) as e:
             logger.warning("Most-played seed augmentation failed: %s", str(e)[:200])
 
         return songs
 
     async def _fetch_albums_songs_parallel(self, album_ids: List[str]) -> List[List[Dict]]:
-        """Fetch songs for multiple albums in parallel."""
+        """Fetch songs for multiple albums in parallel.
+
+        Uses ``return_exceptions=True`` so a single album fetch failure does
+        not cancel the whole batch. Failed fetches show up as empty lists in
+        the result.
+        """
         async with aiohttp.ClientSession() as session:
             tasks = [self._fetch_album_songs_async(session, aid) for aid in album_ids]
-            return await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        clean: List[List[Dict]] = []
+        for aid, result in zip(album_ids, results):
+            if isinstance(result, BaseException):
+                logger.debug("Album %s fetch failed: %s", aid, result)
+                clean.append([])
+            else:
+                clean.append(result)
+        return clean
 
     def get_song_rating(self, song_id: str) -> int:
         """Get rating for a song (0-5 stars).
