@@ -830,6 +830,17 @@ class OctoGenEngine:
         # Get configuration
         audiomuse_songs_count = self.config["audiomuse"]["songs_per_mix"]
         llm_songs_count = self.config["audiomuse"]["llm_songs_per_mix"]
+
+        # When Octo-Fiesta is disabled, LLM picks have no download path and
+        # silently drop out of the playlist. Clamp the LLM half to 0 so the
+        # mix is pure AudioMuse instead of half-empty.
+        if self.octo is None and llm_songs_count > 0:
+            logger.info(
+                "Octo-Fiesta disabled: skipping LLM half of %s "
+                "(LLM_SONGS_PER_MIX=%d ignored, AudioMuse-only)",
+                label, llm_songs_count,
+            )
+            llm_songs_count = 0
         
         # Get songs from AudioMuse-AI if enabled
         audiomuse_actual_count = 0
@@ -884,20 +895,29 @@ class OctoGenEngine:
                 num_llm_songs = llm_songs_count + shortfall + buffer
                 logger.info(f"🔄 AudioMuse returned {audiomuse_actual_count}/{audiomuse_songs_count} songs, "
                             f"requesting {num_llm_songs} from LLM (includes {buffer} song buffer)")
-        
-        logger.debug(f"Requesting {num_llm_songs} songs from LLM for {label}")
-        # We'll use the AI engine to generate just the LLM portion
-        llm_songs = self._generate_llm_songs_for_daily_mix(
-            mix_number=mix_number,
-            genre_focus=genre_focus,
-            characteristics=characteristics,
-            num_songs=num_llm_songs,
-            top_artists=top_artists,
-            top_genres=top_genres,
-            favorited_songs=favorited_songs,
-            low_rated_songs=low_rated_songs
-        )
-        
+
+        # Skip the LLM call entirely when Octo-Fiesta is disabled. Without a
+        # download path, LLM picks would just be dropped during track lookup
+        # (and the shortfall logic above would still inflate num_llm_songs).
+        if self.octo is None:
+            num_llm_songs = 0
+
+        if num_llm_songs > 0:
+            logger.debug(f"Requesting {num_llm_songs} songs from LLM for {label}")
+            # We'll use the AI engine to generate just the LLM portion
+            llm_songs = self._generate_llm_songs_for_daily_mix(
+                mix_number=mix_number,
+                genre_focus=genre_focus,
+                characteristics=characteristics,
+                num_songs=num_llm_songs,
+                top_artists=top_artists,
+                top_genres=top_genres,
+                favorited_songs=favorited_songs,
+                low_rated_songs=low_rated_songs
+            )
+        else:
+            llm_songs = []
+
         songs.extend(llm_songs)
         random.shuffle(songs)
         
@@ -1213,13 +1233,22 @@ CRITICAL RULES:
                     logger.info("AudioMuse-AI service succeeded: %d playlists", audiomuse_playlists)
                     
                     # Create Discovery from AI response (LLM-only for new discoveries)
+                    # Discovery is 100% LLM picks, so without a download path
+                    # (Octo-Fiesta) the resulting playlist is essentially empty.
+                    # Skip it entirely when OCTOFIESTA_ENABLED=false.
                     if "Discovery" in all_playlists:
-                        discovery_songs = all_playlists["Discovery"]
-                        if isinstance(discovery_songs, list) and discovery_songs:
-                            logger.info("=" * 70)
-                            logger.info("DISCOVERY (LLM-only for new discoveries)")
-                            logger.info("=" * 70)
-                            self.create_playlist("Discovery", discovery_songs, max_songs=50)
+                        if self.octo is None:
+                            logger.info(
+                                "Discovery skipped: requires OCTOFIESTA_ENABLED=true "
+                                "(LLM-only playlist needs Octo-Fiesta to fetch picks)"
+                            )
+                        else:
+                            discovery_songs = all_playlists["Discovery"]
+                            if isinstance(discovery_songs, list) and discovery_songs:
+                                logger.info("=" * 70)
+                                logger.info("DISCOVERY (LLM-only for new discoveries)")
+                                logger.info("=" * 70)
+                                self.create_playlist("Discovery", discovery_songs, max_songs=50)
                 else:
                     # Original behavior: use all AI-generated playlists
                     for playlist_name, songs in all_playlists.items():
@@ -1545,8 +1574,14 @@ CRITICAL RULES:
                         except Exception as e:
                             logger.warning(f"AudioMuse generation failed: {e}")
                     
-                    # Get 5 songs from LLM
-                    if self.ai and favorited_songs:
+                    # Get 5 songs from LLM (skip when Octo-Fiesta is disabled —
+                    # LLM picks have no download path and would just be dropped)
+                    if self.octo is None:
+                        logger.info(
+                            "Skipping LLM half of %s: requires OCTOFIESTA_ENABLED=true",
+                            playlist_name,
+                        )
+                    elif self.ai and favorited_songs:
                         logger.info("🤖 Generating 5 songs via LLM...")
                         try:
                             # Build a special prompt for time-period playlist
