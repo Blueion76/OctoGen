@@ -82,7 +82,7 @@ def load_config_from_env() -> Dict:
             "ai_provider": os.getenv("AUDIOMUSE_AI_PROVIDER", "gemini"),
             "ai_model": os.getenv("AUDIOMUSE_AI_MODEL", "gemini-2.5-flash"),
             "ai_api_key": load_secret("AUDIOMUSE_AI_API_KEY"),
-            "api_token": load_secret("AUDIOMUSE_API_TOKEN"),
+            "api_token": load_secret("AUDIOMUSE_API_TOKEN", ""),
         },
         "spotify": {
             "enabled": os.getenv("SPOTIFY_IMPORT_ENABLED", "false").lower() == "true",
