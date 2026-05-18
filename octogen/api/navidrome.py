@@ -35,6 +35,13 @@ class NavidromeAPI:
     LIBRARY_SEARCH_LIMIT = 30  # Max songs per search strategy in library search
     SIMILAR_SEARCH_LIMIT = 50  # Max songs for similar song detection
 
+    # Seed-fallback heuristic: estimate how many albums to fetch to cover N
+    # additional songs. Most albums hold ~10 songs; fetch a small buffer so we
+    # don't have to round-trip again if a few albums come up short.
+    AVG_SONGS_PER_ALBUM = 10
+    ALBUM_FETCH_BUFFER = 5
+    MIN_ALBUMS_TO_FETCH = 5
+
     def __init__(self, url: str, username: str, password: str,
                  ratings_cache: RatingsCache, config: dict):
         """Initialize Navidrome API client.
@@ -56,6 +63,11 @@ class NavidromeAPI:
         self.album_batch_size = config.get("performance", {}).get("album_batch_size", 500)
         self.max_albums = config.get("performance", {}).get("max_albums_scan", 10000)
         self.scan_timeout = config.get("performance", {}).get("scan_timeout", 60)
+
+        ai_cfg = config.get("ai", {})
+        self.seed_fallback_min = ai_cfg.get("seed_fallback_min", 50)
+        self.seed_fallback_target = ai_cfg.get("seed_fallback_target", 500)
+        self.seed_fallback_album_count = ai_cfg.get("seed_fallback_album_count", 100)
 
     def _request(self, endpoint: str, extra_params: dict = None) -> Optional[dict]:
         """Make Subsonic API request.
@@ -101,7 +113,7 @@ class NavidromeAPI:
 
     def get_starred_songs(self) -> List[Dict]:
         """Get all starred songs.
-        
+
         Returns:
             List of starred song dictionaries
         """
@@ -120,8 +132,101 @@ class NavidromeAPI:
                 "album": song.get("album", ""),
                 "genre": song.get("genre", "Unknown"),
             })
+        return songs
+
+    def get_seed_songs(self) -> List[Dict]:
+        """Get songs to seed the AI recommendation engine.
+
+        Returns starred songs, falling back to most-played albums when the
+        starred set is too small. The Gemini context cache requires at least
+        1024 tokens of seed metadata; users with few starred songs hit
+        ``min_total_token_count`` errors and lose the LLM half of every
+        hybrid playlist. When starred count is below ``SEED_FALLBACK_MIN``,
+        augment with songs from the user's most-played albums
+        (Subsonic ``getAlbumList2?type=frequent``) until
+        ``SEED_FALLBACK_TARGET`` is reached.
+
+        NOTE: This method is sync and uses ``asyncio.run()`` internally for the
+        parallel album fetch. It cannot be called from inside a running event
+        loop. If a caller is async, it should call
+        ``_fetch_albums_songs_parallel()`` directly via ``await``.
+
+        Returns:
+            List of seed song dictionaries.
+        """
+        songs = self.get_starred_songs()
+
+        if len(songs) >= self.seed_fallback_min:
+            return songs
+
+        logger.info(
+            "Only %d starred songs (< %d) — augmenting AI seed with most-played albums",
+            len(songs), self.seed_fallback_min,
+        )
+        try:
+            albums_resp = self._request(
+                "getAlbumList2",
+                {"type": "frequent", "size": self.seed_fallback_album_count},
+            )
+            albums = (albums_resp or {}).get("albumList2", {}).get("album", [])
+            needed = max(0, self.seed_fallback_target - len(songs))
+            estimated_albums = min(
+                len(albums),
+                max(
+                    self.MIN_ALBUMS_TO_FETCH,
+                    (needed // self.AVG_SONGS_PER_ALBUM) + self.ALBUM_FETCH_BUFFER,
+                ),
+            )
+            albums = albums[:estimated_albums]
+            album_ids = [a["id"] for a in albums if a.get("id")]
+            album_song_lists = asyncio.run(self._fetch_albums_songs_parallel(album_ids))
+
+            seen_ids = {s["id"] for s in songs}
+            added = 0
+            for album, album_songs in zip(albums, album_song_lists):
+                if len(songs) >= self.seed_fallback_target:
+                    break
+                for s in album_songs:
+                    if s["id"] in seen_ids:
+                        continue
+                    seen_ids.add(s["id"])
+                    songs.append({
+                        "id": s["id"],
+                        "title": s["title"],
+                        "artist": s.get("artist", album.get("artist", "")),
+                        "album": s.get("album", album.get("name", "")),
+                        "genre": s.get("genre", "Unknown"),
+                    })
+                    added += 1
+                    if len(songs) >= self.seed_fallback_target:
+                        break
+            logger.info(
+                "Added %d songs from %d most-played albums (total seed: %d)",
+                added, len(albums), len(songs),
+            )
+        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, TypeError, ValueError) as e:
+            logger.warning("Most-played seed augmentation failed: %s", str(e)[:200])
 
         return songs
+
+    async def _fetch_albums_songs_parallel(self, album_ids: List[str]) -> List[List[Dict]]:
+        """Fetch songs for multiple albums in parallel.
+
+        Uses ``return_exceptions=True`` so a single album fetch failure does
+        not cancel the whole batch. Failed fetches show up as empty lists in
+        the result.
+        """
+        async with aiohttp.ClientSession() as session:
+            tasks = [self._fetch_album_songs_async(session, aid) for aid in album_ids]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        clean: List[List[Dict]] = []
+        for aid, result in zip(album_ids, results):
+            if isinstance(result, BaseException):
+                logger.debug("Album %s fetch failed: %s", aid, result)
+                clean.append([])
+            else:
+                clean.append(result)
+        return clean
 
     def get_song_rating(self, song_id: str) -> int:
         """Get rating for a song (0-5 stars).

@@ -248,6 +248,9 @@ class OctoGenEngine:
                 "max_context_songs": self._get_env_int("AI_MAX_CONTEXT_SONGS", 500),
                 "max_output_tokens": self._get_env_int("AI_MAX_OUTPUT_TOKENS", 65535),
                 "request_timeout": max(30, self._get_env_int("AI_REQUEST_TIMEOUT", 300)),
+                "seed_fallback_min": self._get_env_int("SEED_FALLBACK_MIN", 50),
+                "seed_fallback_target": self._get_env_int("SEED_FALLBACK_TARGET", 500),
+                "seed_fallback_album_count": self._get_env_int("SEED_FALLBACK_ALBUM_COUNT", 100),
             },
             "performance": {
                 "album_batch_size": self._get_env_int("PERF_ALBUM_BATCH_SIZE", 500),
@@ -1030,8 +1033,8 @@ CRITICAL RULES:
             write_health_status(BASE_DIR, "running", "Analyzing music library")
             # Analyze library
             logger.info("Analyzing music library...")
-            logger.debug("Fetching starred songs from Navidrome")
-            favorited_songs = self.nd.get_starred_songs()
+            logger.debug("Fetching seed songs from Navidrome")
+            favorited_songs = self.nd.get_seed_songs()
     
             if not favorited_songs:
                 logger.warning("No starred songs found - library analysis limited")

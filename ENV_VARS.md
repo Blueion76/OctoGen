@@ -204,6 +204,38 @@ AI_REQUEST_TIMEOUT=600
 
 ---
 
+### SEED_FALLBACK_MIN
+**Description**: When the user has fewer than this many starred songs, OctoGen augments the AI seed with songs from the user's most-played albums. This avoids `min_total_token_count` errors from the Gemini context cache (1024-token floor) for users who don't favorite many songs.
+**Default**: `50`
+**Example**:
+```bash
+SEED_FALLBACK_MIN=50
+```
+**Notes**:
+- Set to `0` to disable the fallback entirely (only starred songs will seed the LLM)
+
+---
+
+### SEED_FALLBACK_TARGET
+**Description**: Target total seed size after augmenting with most-played albums. Augmentation stops once the seed reaches this size.
+**Default**: `500`
+**Example**:
+```bash
+SEED_FALLBACK_TARGET=500
+```
+
+---
+
+### SEED_FALLBACK_ALBUM_COUNT
+**Description**: Number of most-played albums to pull from Subsonic `getAlbumList2?type=frequent` when augmenting the seed.
+**Default**: `100`
+**Example**:
+```bash
+SEED_FALLBACK_ALBUM_COUNT=100
+```
+
+---
+
 ## 🕐 Scheduling Configuration (Optional)
 
 ### SCHEDULE_CRON
