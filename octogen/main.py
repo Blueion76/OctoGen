@@ -89,12 +89,16 @@ class OctoGenEngine:
             logger.error("Cannot connect to Navidrome")
             sys.exit(1)
 
-        self.octo = OctoFiestaTrigger(
-            self.config["octofiesta"]["url"],
-            self.config["navidrome"]["username"],
-            self.config["navidrome"]["password"],
-            dry_run=dry_run
-        )
+        if self.config["octofiesta"]["enabled"]:
+            self.octo = OctoFiestaTrigger(
+                self.config["octofiesta"]["url"],
+                self.config["navidrome"]["username"],
+                self.config["navidrome"]["password"],
+                dry_run=dry_run
+            )
+        else:
+            self.octo = None
+            logger.info("✓ Octo-Fiesta: disabled (OCTOFIESTA_ENABLED=false) — local-only mode")
 
         # Initialize AI engine (optional if other services are configured)
         self.ai = None
@@ -194,6 +198,7 @@ class OctoGenEngine:
             "songs_skipped_duplicate": 0,
             "duplicates_prevented": 0,
             "ai_calls": 0,
+            "fiesta_skipped": 0,
         }
 
         # Track processed songs to avoid duplicates
@@ -211,12 +216,14 @@ class OctoGenEngine:
         logger.info("Loading configuration from environment variables...")
 
         # Check required variables (except AI_API_KEY which is now optional)
+        octofiesta_enabled = self._get_env_bool("OCTOFIESTA_ENABLED", True)
         required_vars = [
             "NAVIDROME_URL",
             "NAVIDROME_USER",
             "NAVIDROME_PASSWORD",
-            "OCTOFIESTA_URL"
         ]
+        if octofiesta_enabled:
+            required_vars.append("OCTOFIESTA_URL")
 
         missing = [var for var in required_vars if not os.getenv(var)]
         if missing:
@@ -226,7 +233,7 @@ class OctoGenEngine:
             logger.error("  NAVIDROME_URL       - Navidrome server URL")
             logger.error("  NAVIDROME_USER      - Navidrome username")
             logger.error("  NAVIDROME_PASSWORD  - Navidrome password")
-            logger.error("  OCTOFIESTA_URL      - Octo-Fiesta server URL")
+            logger.error("  OCTOFIESTA_URL      - Octo-Fiesta server URL (when OCTOFIESTA_ENABLED=true)")
             logger.error("")
             logger.error("See ENV_VARS.md for complete reference")
             sys.exit(1)
@@ -238,7 +245,8 @@ class OctoGenEngine:
                 "password": os.getenv("NAVIDROME_PASSWORD")
             },
             "octofiesta": {
-                "url": os.getenv("OCTOFIESTA_URL")
+                "enabled": octofiesta_enabled,
+                "url": os.getenv("OCTOFIESTA_URL") if octofiesta_enabled else None,
             },
             "ai": {
                 "api_key": os.getenv("AI_API_KEY", ""),
@@ -293,7 +301,8 @@ class OctoGenEngine:
 
         # Log configuration (without secrets)
         logger.info("✓ Navidrome: %s", config['navidrome']['url'])
-        logger.info("✓ Octo-Fiesta: %s", config['octofiesta']['url'])
+        if config['octofiesta']['enabled']:
+            logger.info("✓ Octo-Fiesta: %s", config['octofiesta']['url'])
         if config['lastfm']['enabled']:
             logger.info("✓ Last.fm enabled: %s", config['lastfm']['username'])
         if config['listenbrainz']['enabled']:
@@ -361,10 +370,10 @@ class OctoGenEngine:
         logger.info("✓ Music sources: %s", ", ".join(sources))
         
         # Validate URLs
-        for name, url in [
-            ("Navidrome", self.config["navidrome"]["url"]),
-            ("Octo-Fiesta", self.config["octofiesta"]["url"])
-        ]:
+        services = [("Navidrome", self.config["navidrome"]["url"])]
+        if self.config["octofiesta"]["enabled"]:
+            services.append(("Octo-Fiesta", self.config["octofiesta"]["url"]))
+        for name, url in services:
             if not url:
                 errors.append(f"{name} URL is empty")
             elif not url.startswith(("http://", "https://")):
@@ -610,6 +619,10 @@ class OctoGenEngine:
         if self.dry_run:
             return None
 
+        if self.octo is None:
+            self.stats["fiesta_skipped"] += 1
+            self.stats["songs_failed"] += 1
+            return None
         success, _result = self.octo.search_and_trigger_download(artist, title)
 
         if not success:
@@ -722,6 +735,9 @@ class OctoGenEngine:
                     if d_idx % 5 == 0 or d_idx == 1 or d_idx == len(needs_download):
                         logger.info(" [%s] Download progress: %d/%d", playlist_name, d_idx, len(needs_download))
     
+                    if self.octo is None:
+                        self.stats["fiesta_skipped"] += 1
+                        continue
                     success, _result = self.octo.search_and_trigger_download(artist, title)
                     if success:
                         downloaded_count += 1
@@ -818,6 +834,17 @@ class OctoGenEngine:
         # Get configuration
         audiomuse_songs_count = self.config["audiomuse"]["songs_per_mix"]
         llm_songs_count = self.config["audiomuse"]["llm_songs_per_mix"]
+
+        # When Octo-Fiesta is disabled, LLM picks have no download path and
+        # silently drop out of the playlist. Clamp the LLM half to 0 so the
+        # mix is pure AudioMuse instead of half-empty.
+        if self.octo is None and llm_songs_count > 0:
+            logger.info(
+                "Octo-Fiesta disabled: skipping LLM half of %s "
+                "(LLM_SONGS_PER_MIX=%d ignored, AudioMuse-only)",
+                label, llm_songs_count,
+            )
+            llm_songs_count = 0
         
         # Get songs from AudioMuse-AI if enabled
         audiomuse_actual_count = 0
@@ -872,20 +899,29 @@ class OctoGenEngine:
                 num_llm_songs = llm_songs_count + shortfall + buffer
                 logger.info(f"🔄 AudioMuse returned {audiomuse_actual_count}/{audiomuse_songs_count} songs, "
                             f"requesting {num_llm_songs} from LLM (includes {buffer} song buffer)")
-        
-        logger.debug(f"Requesting {num_llm_songs} songs from LLM for {label}")
-        # We'll use the AI engine to generate just the LLM portion
-        llm_songs = self._generate_llm_songs_for_daily_mix(
-            mix_number=mix_number,
-            genre_focus=genre_focus,
-            characteristics=characteristics,
-            num_songs=num_llm_songs,
-            top_artists=top_artists,
-            top_genres=top_genres,
-            favorited_songs=favorited_songs,
-            low_rated_songs=low_rated_songs
-        )
-        
+
+        # Skip the LLM call entirely when Octo-Fiesta is disabled. Without a
+        # download path, LLM picks would just be dropped during track lookup
+        # (and the shortfall logic above would still inflate num_llm_songs).
+        if self.octo is None:
+            num_llm_songs = 0
+
+        if num_llm_songs > 0:
+            logger.debug(f"Requesting {num_llm_songs} songs from LLM for {label}")
+            # We'll use the AI engine to generate just the LLM portion
+            llm_songs = self._generate_llm_songs_for_daily_mix(
+                mix_number=mix_number,
+                genre_focus=genre_focus,
+                characteristics=characteristics,
+                num_songs=num_llm_songs,
+                top_artists=top_artists,
+                top_genres=top_genres,
+                favorited_songs=favorited_songs,
+                low_rated_songs=low_rated_songs
+            )
+        else:
+            llm_songs = []
+
         songs.extend(llm_songs)
         random.shuffle(songs)
         
@@ -1201,13 +1237,22 @@ CRITICAL RULES:
                     logger.info("AudioMuse-AI service succeeded: %d playlists", audiomuse_playlists)
                     
                     # Create Discovery from AI response (LLM-only for new discoveries)
+                    # Discovery is 100% LLM picks, so without a download path
+                    # (Octo-Fiesta) the resulting playlist is essentially empty.
+                    # Skip it entirely when OCTOFIESTA_ENABLED=false.
                     if "Discovery" in all_playlists:
-                        discovery_songs = all_playlists["Discovery"]
-                        if isinstance(discovery_songs, list) and discovery_songs:
-                            logger.info("=" * 70)
-                            logger.info("DISCOVERY (LLM-only for new discoveries)")
-                            logger.info("=" * 70)
-                            self.create_playlist("Discovery", discovery_songs, max_songs=50)
+                        if self.octo is None:
+                            logger.info(
+                                "Discovery skipped: requires OCTOFIESTA_ENABLED=true "
+                                "(LLM-only playlist needs Octo-Fiesta to fetch picks)"
+                            )
+                        else:
+                            discovery_songs = all_playlists["Discovery"]
+                            if isinstance(discovery_songs, list) and discovery_songs:
+                                logger.info("=" * 70)
+                                logger.info("DISCOVERY (LLM-only for new discoveries)")
+                                logger.info("=" * 70)
+                                self.create_playlist("Discovery", discovery_songs, max_songs=50)
                 else:
                     # Original behavior: use all AI-generated playlists
                     for playlist_name, songs in all_playlists.items():
@@ -1533,8 +1578,14 @@ CRITICAL RULES:
                         except Exception as e:
                             logger.warning(f"AudioMuse generation failed: {e}")
                     
-                    # Get 5 songs from LLM
-                    if self.ai and favorited_songs:
+                    # Get 5 songs from LLM (skip when Octo-Fiesta is disabled —
+                    # LLM picks have no download path and would just be dropped)
+                    if self.octo is None:
+                        logger.info(
+                            "Skipping LLM half of %s: requires OCTOFIESTA_ENABLED=true",
+                            playlist_name,
+                        )
+                    elif self.ai and favorited_songs:
                         logger.info("🤖 Generating 5 songs via LLM...")
                         try:
                             # Build a special prompt for time-period playlist
@@ -1707,6 +1758,9 @@ CRITICAL RULES:
             logger.info("Songs skipped (low rating): %d", self.stats["songs_skipped_low_rating"])
             logger.info("Songs skipped (duplicate): %d", self.stats["songs_skipped_duplicate"])
             logger.info("Songs failed: %d", self.stats["songs_failed"])
+            if not self.config["octofiesta"]["enabled"]:
+                logger.info("Local-only mode: skipped %d download attempts for missing tracks",
+                            self.stats.get("fiesta_skipped", 0))
             logger.info("=" * 70)
             
             # Record successful run

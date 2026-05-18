@@ -32,14 +32,23 @@ class NavidromeConfig(BaseModel):
 
 class OctoFiestaConfig(BaseModel):
     """Octo-Fiesta server configuration"""
-    url: str = Field(..., description="Octo-Fiesta server URL")
-    
+    enabled: bool = Field(True, description="Enable Octo-Fiesta downloads")
+    url: Optional[str] = Field(default=None, description="Octo-Fiesta server URL")
+
     @field_validator('url')
     @classmethod
     def validate_url(cls, v):
+        if v is None:
+            return v
         if not v.startswith(('http://', 'https://')):
             raise ValueError('URL must start with http:// or https://')
         return v.rstrip('/')
+
+    @model_validator(mode='after')
+    def url_required_when_enabled(self):
+        if self.enabled and not self.url:
+            raise ValueError('OCTOFIESTA_URL is required when OCTOFIESTA_ENABLED=true')
+        return self
 
 
 class AIConfig(BaseModel):
