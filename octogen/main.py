@@ -298,9 +298,9 @@ class OctoGenEngine:
                 "playlist_urls": os.getenv("DEEZER_PLAYLIST_URLS", ""),
             },
             "playlists": {
-                "time_of_day_persist": self._get_env_bool(
-                    "TIMEOFDAY_PLAYLISTS_PERSIST", False
-                ),
+                "time_of_day_persist": os.getenv(
+                    "TIMEOFDAY_PLAYLISTS_PERSIST", "false"
+                ).lower() == "true",
             },
         }
 
@@ -354,10 +354,7 @@ class OctoGenEngine:
             all_playlists_in_navidrome = self.nd.get_all_playlists()
             for nd_playlist in all_playlists_in_navidrome:
                 nd_playlist_name = nd_playlist.get("name", "")
-                is_period = any(
-                    pattern in nd_playlist_name
-                    for pattern in self._PERIOD_PLAYLIST_PATTERNS
-                )
+                is_period = nd_playlist_name in self._PERIOD_PLAYLIST_PATTERNS
                 if is_period and nd_playlist_name != current_playlist_name:
                     playlist_id = nd_playlist.get("id")
                     if playlist_id:

@@ -568,7 +568,7 @@ TIMEOFDAY_ENABLED=true
 - **Night Vibes**: Generates at 10:00 PM only
 - Duplicate prevention: Won't regenerate within 1 hour
 - Respects TZ environment variable for timezone
-- Auto-deletes previous period's playlist when generating new one (override with `TIMEOFDAY_PLAYLISTS_PERSIST=true`)
+- Auto-deletes inactive periods' playlists when generating new one (override with `TIMEOFDAY_PLAYLISTS_PERSIST=true`)
 
 ---
 
