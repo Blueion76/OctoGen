@@ -141,7 +141,8 @@ class OctoGenEngine:
                 base_url=audiomuse_url,
                 ai_provider=self.config["audiomuse"]["ai_provider"],
                 ai_model=self.config["audiomuse"]["ai_model"],
-                api_key=self.config["audiomuse"]["ai_api_key"] or None
+                api_key=self.config["audiomuse"]["ai_api_key"] or None,
+                audiomuse_api_token=self.config["audiomuse"]["api_token"] or None,
             )
             if audiomuse_client.check_health():
                 logger.info("✅ AudioMuse-AI connected at %s", audiomuse_url)
@@ -271,6 +272,7 @@ class OctoGenEngine:
                 "ai_provider": os.getenv("AUDIOMUSE_AI_PROVIDER", "gemini"),
                 "ai_model": os.getenv("AUDIOMUSE_AI_MODEL", "gemini-2.5-flash"),
                 "ai_api_key": os.getenv("AUDIOMUSE_AI_API_KEY", ""),
+                "api_token": load_secret("AUDIOMUSE_API_TOKEN", ""),
                 "songs_per_mix": self._get_env_int("AUDIOMUSE_SONGS_PER_MIX", 25),
                 "llm_songs_per_mix": self._get_env_int("LLM_SONGS_PER_MIX", 5)
             },

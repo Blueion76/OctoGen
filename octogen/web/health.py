@@ -8,6 +8,8 @@ from pathlib import Path
 import json
 from datetime import datetime, timezone
 
+from octogen.utils.secrets import load_secret
+
 logger = logging.getLogger(__name__)
 
 
@@ -243,9 +245,13 @@ def check_audiomuse() -> Dict[str, Any]:
                 "healthy": False
             }
         
+        api_token = load_secret("AUDIOMUSE_API_TOKEN", "")
+        headers = {"Authorization": f"Bearer {api_token}"} if api_token else {}
+
         # Try to check health using /api/config endpoint
         response = requests.get(
             f"{url}/api/config",  # Changed from /health to /api/config
+            headers=headers,
             timeout=5
         )
         
