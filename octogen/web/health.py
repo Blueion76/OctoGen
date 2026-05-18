@@ -351,6 +351,10 @@ def check_lidarr() -> Dict[str, Any]:
                 "healthy": False
             }
 
+        # Normalize trailing slash to mirror LidarrClient.url and avoid
+        # accidental "//api/v1/..." paths.
+        url = url.rstrip("/")
+
         response = requests.get(
             f"{url}/api/v1/system/status",
             headers={"X-Api-Key": api_key},
@@ -383,10 +387,10 @@ def check_lidarr() -> Dict[str, Any]:
             "healthy": False
         }
     except Exception as e:
-        logger.error("Error checking Lidarr: %s", e)
+        logger.error("Error checking Lidarr: %s", e, exc_info=True)
         return {
             "status": "error",
-            "message": "Unexpected error",
+            "message": str(e),
             "healthy": False
         }
 

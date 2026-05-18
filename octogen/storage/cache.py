@@ -61,15 +61,20 @@ class RatingsCache:
                 )
             """)
             # Idempotent migration for DBs created before push_attempt_count
-            # existed in CREATE TABLE — duplicate-column raises OperationalError
-            # which we swallow.
+            # existed in CREATE TABLE. Only swallow the expected
+            # "duplicate column" error; any other OperationalError signals a
+            # real schema/IO problem and must surface.
             try:
                 conn.execute(
                     "ALTER TABLE missing_artists ADD COLUMN "
                     "push_attempt_count INTEGER NOT NULL DEFAULT 0"
                 )
-            except sqlite3.OperationalError:
-                pass
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    logger.error(
+                        "missing_artists migration failed: %s", e, exc_info=True,
+                    )
+                    raise
             conn.commit()
 
     def get_last_scan_date(self) -> Optional[str]:

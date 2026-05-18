@@ -306,8 +306,8 @@ class OctoGenEngine:
                 "username": os.getenv("LASTFM_USERNAME", "")
             },
             "lidarr": {
-                "enabled": bool(os.getenv("LIDARR_URL")),
-                "url": os.getenv("LIDARR_URL"),
+                "enabled": bool(load_secret("LIDARR_URL", "")),
+                "url": load_secret("LIDARR_URL", "") or None,
                 "api_key": load_secret("LIDARR_API_KEY", ""),
                 "min_missing": self._get_env_int("LIDARR_MIN_MISSING", 3),
                 "add_monitored": self._get_env_bool("LIDARR_ADD_MONITORED", False),
@@ -505,6 +505,11 @@ class OctoGenEngine:
                         logger.warning(
                             "Lidarr push error for %r: %s", artist, e, exc_info=True,
                         )
+                        # Treat exceptions as failed attempts so the retry cap
+                        # (max_attempts) is enforced consistently — otherwise
+                        # a flaky Lidarr would re-attempt every missing-track
+                        # event forever.
+                        self.ratings_cache.increment_push_attempt(artist)
                     else:
                         if success:
                             self.ratings_cache.mark_pushed(artist)

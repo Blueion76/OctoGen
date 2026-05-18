@@ -117,8 +117,16 @@ class LidarrClient:
         KeyError (missing foreignArtistId in lookup result) to uphold the
         never-raises contract.
         """
-        if self.quality_profile_id is None:
-            return False, "validate() not called"
+        missing = [
+            name for name, value in (
+                ("quality_profile_id", self.quality_profile_id),
+                ("metadata_profile_id", self.metadata_profile_id),
+                ("root_folder_path", self.root_folder_path),
+            )
+            if value is None
+        ]
+        if missing:
+            return False, f"validate() not called or incomplete: missing {', '.join(missing)}"
 
         if self.dry_run:
             logger.info(
