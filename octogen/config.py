@@ -102,7 +102,7 @@ def load_config_from_env() -> Dict:
         "playlists": {
             "time_of_day_persist": os.getenv(
                 "TIMEOFDAY_PLAYLISTS_PERSIST", "false"
-            ).lower() == "true",
+            ).lower() in ("true", "1", "yes", "on"),
         },
         "performance": {
             "album_batch_size": int(os.getenv("ALBUM_BATCH_SIZE", "500")),

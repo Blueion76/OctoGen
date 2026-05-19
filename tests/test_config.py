@@ -186,11 +186,23 @@ class TestTimeOfDayPlaylistsPersist:
             config = load_config_from_env()
         assert config["playlists"]["time_of_day_persist"] is False
 
-    def test_arbitrary_value_treated_as_false(self):
-        """Anything not equal to `true` (case-insensitive) is False."""
+    def test_truthy_aliases_enable(self):
+        """Other truthy aliases (1, yes, on) also enable, matching project convention."""
+        for value in ("1", "yes", "on", "YES", "On"):
+            with patch.dict(
+                os.environ,
+                {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": value},
+            ):
+                config = load_config_from_env()
+            assert config["playlists"]["time_of_day_persist"] is True, (
+                f"expected {value!r} to enable persistence"
+            )
+
+    def test_unknown_value_treated_as_false(self):
+        """A value outside the truthy set (e.g. 'maybe') is False."""
         with patch.dict(
             os.environ,
-            {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": "yes"},
+            {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": "maybe"},
         ):
             config = load_config_from_env()
         assert config["playlists"]["time_of_day_persist"] is False

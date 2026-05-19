@@ -620,7 +620,7 @@ TIMEOFDAY_MORNING_START=4
 ### TIMEOFDAY_PLAYLISTS_PERSIST
 **Description**: Keep all four time-of-day playlists in Navidrome instead of deleting the inactive ones  
 **Default**: `false`  
-**Options**: `true`, `false`  
+**Options**: `true`, `1`, `yes`, `on` (case-insensitive) enable; anything else is treated as `false`  
 **Example**:
 ```bash
 TIMEOFDAY_PLAYLISTS_PERSIST=true
