@@ -81,6 +81,7 @@ See [AudioMuse-AI Setup](#-audiomuse-ai-setup-optional) below.
 - **Star rating filtering**: Excludes 1-2 star rated songs
 - **Duplicate detection**: No repeated tracks across playlists
 - **Optional Octo-Fiesta integration** — auto-download missing tracks, or run local-only with `OCTOFIESTA_ENABLED=false`
+- **Optional Lidarr bridge** — auto-add missing-track artists to Lidarr after a configurable threshold; safe defaults (unmonitored + tagged for cleanup).
 - **Daily cache**: Efficient library scanning
 - **Async operations**: Fast, parallel processing
 - **LastFM, ListenBrainz & AudioMuse-AI**: Optional integrations

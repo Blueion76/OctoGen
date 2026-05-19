@@ -175,12 +175,52 @@ class LoggingConfig(BaseModel):
         return v.lower()
 
 
+class LidarrConfig(BaseModel):
+    """Lidarr bridge configuration"""
+    enabled: bool = False
+    url: Optional[str] = None
+    api_key: Optional[str] = None
+    min_missing: int = Field(default=3, ge=1)
+    add_monitored: bool = Field(
+        default=False,
+        description="When True, Lidarr addOptions.monitor='all'; when False, 'none'.",
+    )
+    tag: str = "octogen"
+    quality_profile: Optional[str] = None
+    metadata_profile: Optional[str] = None
+
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v):
+        if v is None:
+            return v
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError('URL must start with http:// or https://')
+        return v.rstrip('/')
+
+    @model_validator(mode='after')
+    def required_when_enabled(self):
+        if self.enabled:
+            missing = [name for name, val in [
+                ("LIDARR_URL", self.url),
+                ("LIDARR_API_KEY", self.api_key),
+                ("LIDARR_QUALITY_PROFILE", self.quality_profile),
+                ("LIDARR_METADATA_PROFILE", self.metadata_profile),
+            ] if not val]
+            if missing:
+                raise ValueError(
+                    f"Lidarr bridge enabled but missing: {', '.join(missing)}"
+                )
+        return self
+
+
 class OctoGenConfig(BaseModel):
     """Main OctoGen configuration"""
     navidrome: NavidromeConfig
     octofiesta: OctoFiestaConfig
     ai: Optional[AIConfig] = None
     lastfm: Optional[LastFMConfig] = None
+    lidarr: Optional[LidarrConfig] = None
     listenbrainz: Optional[ListenBrainzConfig] = None
     audiomuse: Optional[AudioMuseConfig] = None
     spotify: Optional[SpotifyConfig] = None

@@ -2,7 +2,7 @@
 
 import sqlite3
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -49,6 +49,26 @@ class RatingsCache:
                     value TEXT NOT NULL
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS missing_artists (
+                    artist TEXT PRIMARY KEY,
+                    artist_display TEXT NOT NULL,
+                    missing_count INTEGER NOT NULL DEFAULT 0,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    pushed_to_lidarr TEXT,
+                    push_attempt_count INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            existing = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(missing_artists)")
+            }
+            if "push_attempt_count" not in existing:
+                conn.execute(
+                    "ALTER TABLE missing_artists ADD COLUMN "
+                    "push_attempt_count INTEGER NOT NULL DEFAULT 0"
+                )
             conn.commit()
 
     def get_last_scan_date(self) -> Optional[str]:
@@ -119,3 +139,92 @@ class RatingsCache:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM ratings")
             conn.commit()
+
+    @staticmethod
+    def _normalize_artist(name: str) -> str:
+        return name.strip().lower()
+
+    def record_missing_track(self, artist: str) -> int:
+        """Record that a track by `artist` was missing.
+
+        Increments the count for that artist (case-insensitive, whitespace-trimmed).
+        Returns the new count.
+        """
+        key = self._normalize_artist(artist)
+        display = artist.strip()
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """INSERT INTO missing_artists
+                   (artist, artist_display, missing_count, first_seen, last_seen)
+                   VALUES (?, ?, 1, ?, ?)
+                   ON CONFLICT(artist) DO UPDATE SET
+                     missing_count = missing_count + 1,
+                     last_seen = excluded.last_seen
+                   RETURNING missing_count""",
+                (key, display, now, now),
+            ).fetchone()
+            conn.commit()
+        return row[0]
+
+    def mark_pushed(self, artist: str) -> None:
+        """Mark an artist as pushed to Lidarr."""
+        key = self._normalize_artist(artist)
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE missing_artists SET pushed_to_lidarr=? WHERE artist=?",
+                (now, key),
+            )
+            conn.commit()
+
+    def increment_push_attempt(self, artist: str) -> int:
+        """Record a failed push attempt; return new attempt count."""
+        key = self._normalize_artist(artist)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE missing_artists SET push_attempt_count = push_attempt_count + 1 "
+                "WHERE artist=?",
+                (key,),
+            )
+            row = conn.execute(
+                "SELECT push_attempt_count FROM missing_artists WHERE artist=?",
+                (key,),
+            ).fetchone()
+            conn.commit()
+        if row is None:
+            logger.warning(
+                "increment_push_attempt called for unknown artist %r — no row updated",
+                artist,
+            )
+            return 0
+        return row[0]
+
+    def get_pending_pushes(self, threshold: int, max_attempts: int = 5) -> List[str]:
+        """Return display names of artists at/above threshold, not yet pushed,
+        and below max failed attempts."""
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT artist_display FROM missing_artists
+                   WHERE missing_count >= ?
+                     AND pushed_to_lidarr IS NULL
+                     AND push_attempt_count < ?""",
+                (threshold, max_attempts),
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def is_pending_push(
+        self, artist: str, threshold: int, max_attempts: int = 5
+    ) -> bool:
+        """True if `artist` is at/above threshold, not yet pushed, and below max attempts."""
+        key = self._normalize_artist(artist)
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """SELECT 1 FROM missing_artists
+                   WHERE artist = ?
+                     AND missing_count >= ?
+                     AND pushed_to_lidarr IS NULL
+                     AND push_attempt_count < ?""",
+                (key, threshold, max_attempts),
+            ).fetchone()
+        return row is not None

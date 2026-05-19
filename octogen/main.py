@@ -36,6 +36,7 @@ from octogen.api.listenbrainz import ListenBrainzAPI
 from octogen.api.audiomuse import AudioMuseClient
 from octogen.api.spotify import SpotifyImporter
 from octogen.api.deezer import DeezerImporter
+from octogen.api.lidarr import LidarrClient
 from octogen.ai.engine import AIRecommendationEngine, GEMINI_SDK_AVAILABLE
 from octogen.models.tracker import ServiceTracker, RunTracker
 from octogen.web.health import write_health_status
@@ -99,6 +100,36 @@ class OctoGenEngine:
         else:
             self.octo = None
             logger.info("✓ Octo-Fiesta: disabled (OCTOFIESTA_ENABLED=false) — local-only mode")
+
+        if self.config["lidarr"]["enabled"]:
+            self.lidarr = LidarrClient(
+                url=self.config["lidarr"]["url"],
+                api_key=self.config["lidarr"]["api_key"],
+                quality_profile=self.config["lidarr"]["quality_profile"],
+                metadata_profile=self.config["lidarr"]["metadata_profile"],
+                tag=self.config["lidarr"]["tag"],
+                monitored=self.config["lidarr"]["add_monitored"],
+                dry_run=dry_run,
+            )
+            try:
+                self.lidarr.validate()
+                logger.info("✓ Lidarr bridge: %s (monitored=%s, tag=%s, min_missing=%d)",
+                            self.config["lidarr"]["url"],
+                            self.config["lidarr"]["add_monitored"],
+                            self.config["lidarr"]["tag"] or "(none)",
+                            self.config["lidarr"]["min_missing"])
+            except RuntimeError as e:
+                # Optional integration: a transient unreachable Lidarr or a
+                # bad profile name should not take down the whole service.
+                # Match the degrade-and-warn pattern used by Last.fm,
+                # ListenBrainz, and AudioMuse.
+                logger.warning(
+                    "Lidarr bridge unavailable: %s. Continuing without it; "
+                    "missing-track artists will not be pushed to Lidarr.", e,
+                )
+                self.lidarr = None
+        else:
+            self.lidarr = None
 
         # Initialize AI engine (optional if other services are configured)
         self.ai = None
@@ -199,6 +230,9 @@ class OctoGenEngine:
             "duplicates_prevented": 0,
             "ai_calls": 0,
             "fiesta_skipped": 0,
+            "lidarr_added": 0,
+            "lidarr_below_threshold": 0,
+            "lidarr_push_failed": 0,
         }
 
         # Track processed songs to avoid duplicates
@@ -272,6 +306,16 @@ class OctoGenEngine:
                 "api_key": os.getenv("LASTFM_API_KEY", ""),
                 "username": os.getenv("LASTFM_USERNAME", "")
             },
+            "lidarr": {
+                "enabled": bool(load_secret("LIDARR_URL", "")),
+                "url": load_secret("LIDARR_URL", "") or None,
+                "api_key": load_secret("LIDARR_API_KEY", ""),
+                "min_missing": self._get_env_int("LIDARR_MIN_MISSING", 3),
+                "add_monitored": self._get_env_bool("LIDARR_ADD_MONITORED", False),
+                "tag": os.getenv("LIDARR_TAG", "octogen"),
+                "quality_profile": os.getenv("LIDARR_QUALITY_PROFILE"),
+                "metadata_profile": os.getenv("LIDARR_METADATA_PROFILE"),
+            },
             "listenbrainz": {
                 "enabled": self._get_env_bool("LISTENBRAINZ_ENABLED", False),
                 "username": os.getenv("LISTENBRAINZ_USERNAME", ""),
@@ -313,6 +357,8 @@ class OctoGenEngine:
             logger.info("✓ Spotify import enabled")
         if config['deezer']['enabled']:
             logger.info("✓ Deezer import enabled")
+        if config['lidarr']['enabled']:
+            logger.info("✓ Lidarr bridge enabled: %s", config['lidarr']['url'])
 
         return config
 
@@ -433,6 +479,60 @@ class OctoGenEngine:
             sys.exit(1)
         
         logger.info("✅ Configuration validated successfully")
+
+    def _handle_missing_track(self, artist: str, title: str) -> tuple:
+        """Centralised handling of a track that is missing from the library.
+
+        Returns (fiesta_success, fiesta_result) for compatibility with existing
+        call sites. Lidarr push is a side-effect — failures are logged and
+        ignored.
+        """
+        if self.lidarr is not None:
+            self._try_lidarr_push(artist)
+
+        if self.octo is None:
+            self.stats["fiesta_skipped"] += 1
+            return False, "fiesta-disabled"
+        return self.octo.search_and_trigger_download(artist, title)
+
+    def _try_lidarr_push(self, artist: str) -> None:
+        """Record the missing-track event and push to Lidarr if threshold met.
+
+        Side-effect only; never raises. Exceptions during push count as failed
+        attempts so the per-artist retry cap is enforced consistently.
+        """
+        try:
+            count = self.ratings_cache.record_missing_track(artist)
+        except Exception as e:
+            logger.error(
+                "Missing-artist DB error for %r (%s): %s",
+                artist, type(e).__name__, e, exc_info=True,
+            )
+            return
+
+        threshold = self.config["lidarr"]["min_missing"]
+        if count < threshold:
+            self.stats["lidarr_below_threshold"] += 1
+            return
+        if not self.ratings_cache.is_pending_push(artist, threshold):
+            return
+
+        try:
+            success, _msg = self.lidarr.add_artist(artist)
+        except Exception as e:
+            logger.warning(
+                "Lidarr push error for %r: %s", artist, e, exc_info=True,
+            )
+            self.ratings_cache.increment_push_attempt(artist)
+            self.stats["lidarr_push_failed"] += 1
+            return
+
+        if success:
+            self.ratings_cache.mark_pushed(artist)
+            self.stats["lidarr_added"] += 1
+        else:
+            self.ratings_cache.increment_push_attempt(artist)
+            self.stats["lidarr_push_failed"] += 1
 
     def _check_run_cooldown(self) -> bool:
         """Check if enough time has passed since last run with smart service-based cooldown.
@@ -619,12 +719,7 @@ class OctoGenEngine:
         if self.dry_run:
             return None
 
-        if self.octo is None:
-            self.stats["fiesta_skipped"] += 1
-            self.stats["songs_failed"] += 1
-            return None
-        success, _result = self.octo.search_and_trigger_download(artist, title)
-
+        success, _result = self._handle_missing_track(artist, title)
         if not success:
             self.stats["songs_failed"] += 1
             return None
@@ -735,10 +830,7 @@ class OctoGenEngine:
                     if d_idx % 5 == 0 or d_idx == 1 or d_idx == len(needs_download):
                         logger.info(" [%s] Download progress: %d/%d", playlist_name, d_idx, len(needs_download))
     
-                    if self.octo is None:
-                        self.stats["fiesta_skipped"] += 1
-                        continue
-                    success, _result = self.octo.search_and_trigger_download(artist, title)
+                    success, _result = self._handle_missing_track(artist, title)
                     if success:
                         downloaded_count += 1
     
@@ -1761,6 +1853,13 @@ CRITICAL RULES:
             if not self.config["octofiesta"]["enabled"]:
                 logger.info("Local-only mode: skipped %d download attempts for missing tracks",
                             self.stats.get("fiesta_skipped", 0))
+            if self.config["lidarr"]["enabled"]:
+                logger.info(
+                    "Lidarr bridge: added %d new artists, %d push failures, tracking %d below threshold",
+                    self.stats.get("lidarr_added", 0),
+                    self.stats.get("lidarr_push_failed", 0),
+                    self.stats.get("lidarr_below_threshold", 0),
+                )
             logger.info("=" * 70)
             
             # Record successful run

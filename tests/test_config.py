@@ -3,6 +3,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from octogen.config import load_config_from_env
 from octogen.main import OctoGenEngine
 
@@ -59,11 +61,61 @@ class TestOctoFiestaToggle:
         """When OCTOFIESTA_ENABLED is unset, OCTOFIESTA_URL must be present (back-compat)."""
         env = {k: v for k, v in _REQUIRED_ENV.items() if k != "OCTOFIESTA_URL"}
         with patch.dict(os.environ, env, clear=True):
-            with patch("octogen.config.sys.exit") as mock_exit:
-                result = load_config_from_env()
+            with patch("octogen.config.sys.exit", side_effect=SystemExit(1)) as mock_exit:
+                with pytest.raises(SystemExit):
+                    load_config_from_env()
                 mock_exit.assert_called_once_with(1)
-        # Confirm nothing meaningful was returned after the mocked exit
-        assert result["octofiesta"]["url"] is None
+
+
+class TestLidarrConfig:
+    """Tests for Lidarr bridge config loading."""
+
+    def test_lidarr_url_unset_means_disabled(self):
+        with patch.dict(os.environ, _REQUIRED_ENV, clear=True):
+            config = load_config_from_env()
+        assert config["lidarr"]["enabled"] is False
+
+    def test_lidarr_url_set_enables_bridge(self):
+        env = {
+            **_REQUIRED_ENV,
+            "LIDARR_URL": "http://lidarr.test",
+            "LIDARR_API_KEY": "abc",
+            "LIDARR_QUALITY_PROFILE": "Standard",
+            "LIDARR_METADATA_PROFILE": "Standard",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config_from_env()
+        assert config["lidarr"]["enabled"] is True
+        assert config["lidarr"]["url"] == "http://lidarr.test"
+        assert config["lidarr"]["min_missing"] == 3  # default
+        assert config["lidarr"]["add_monitored"] is False
+        assert config["lidarr"]["tag"] == "octogen"
+
+    def test_lidarr_min_missing_override(self):
+        env = {
+            **_REQUIRED_ENV,
+            "LIDARR_URL": "http://lidarr.test",
+            "LIDARR_API_KEY": "abc",
+            "LIDARR_QUALITY_PROFILE": "Standard",
+            "LIDARR_METADATA_PROFILE": "Standard",
+            "LIDARR_MIN_MISSING": "10",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config_from_env()
+        assert config["lidarr"]["min_missing"] == 10
+
+    def test_lidarr_empty_tag_disables_tagging(self):
+        env = {
+            **_REQUIRED_ENV,
+            "LIDARR_URL": "http://lidarr.test",
+            "LIDARR_API_KEY": "abc",
+            "LIDARR_QUALITY_PROFILE": "Standard",
+            "LIDARR_METADATA_PROFILE": "Standard",
+            "LIDARR_TAG": "",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config_from_env()
+        assert config["lidarr"]["tag"] == ""
 
     def test_enabled_false_makes_url_optional(self):
         """OCTOFIESTA_ENABLED=false: OCTOFIESTA_URL is no longer required."""
