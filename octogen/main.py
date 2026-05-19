@@ -232,6 +232,7 @@ class OctoGenEngine:
             "fiesta_skipped": 0,
             "lidarr_added": 0,
             "lidarr_below_threshold": 0,
+            "lidarr_push_failed": 0,
         }
 
         # Track processed songs to avoid duplicates
@@ -487,40 +488,51 @@ class OctoGenEngine:
         ignored.
         """
         if self.lidarr is not None:
-            try:
-                count = self.ratings_cache.record_missing_track(artist)
-                threshold = self.config["lidarr"]["min_missing"]
-            except Exception as e:
-                logger.error(
-                    "Missing-artist DB error for %r (%s): %s",
-                    artist, type(e).__name__, e, exc_info=True,
-                )
-            else:
-                if count < threshold:
-                    self.stats["lidarr_below_threshold"] += 1
-                elif self.ratings_cache.is_pending_push(artist, threshold):
-                    try:
-                        success, _msg = self.lidarr.add_artist(artist)
-                    except Exception as e:
-                        logger.warning(
-                            "Lidarr push error for %r: %s", artist, e, exc_info=True,
-                        )
-                        # Treat exceptions as failed attempts so the retry cap
-                        # (max_attempts) is enforced consistently — otherwise
-                        # a flaky Lidarr would re-attempt every missing-track
-                        # event forever.
-                        self.ratings_cache.increment_push_attempt(artist)
-                    else:
-                        if success:
-                            self.ratings_cache.mark_pushed(artist)
-                            self.stats["lidarr_added"] += 1
-                        else:
-                            self.ratings_cache.increment_push_attempt(artist)
+            self._try_lidarr_push(artist)
 
         if self.octo is None:
             self.stats["fiesta_skipped"] += 1
             return False, "fiesta-disabled"
         return self.octo.search_and_trigger_download(artist, title)
+
+    def _try_lidarr_push(self, artist: str) -> None:
+        """Record the missing-track event and push to Lidarr if threshold met.
+
+        Side-effect only; never raises. Exceptions during push count as failed
+        attempts so the per-artist retry cap is enforced consistently.
+        """
+        try:
+            count = self.ratings_cache.record_missing_track(artist)
+        except Exception as e:
+            logger.error(
+                "Missing-artist DB error for %r (%s): %s",
+                artist, type(e).__name__, e, exc_info=True,
+            )
+            return
+
+        threshold = self.config["lidarr"]["min_missing"]
+        if count < threshold:
+            self.stats["lidarr_below_threshold"] += 1
+            return
+        if not self.ratings_cache.is_pending_push(artist, threshold):
+            return
+
+        try:
+            success, _msg = self.lidarr.add_artist(artist)
+        except Exception as e:
+            logger.warning(
+                "Lidarr push error for %r: %s", artist, e, exc_info=True,
+            )
+            self.ratings_cache.increment_push_attempt(artist)
+            self.stats["lidarr_push_failed"] += 1
+            return
+
+        if success:
+            self.ratings_cache.mark_pushed(artist)
+            self.stats["lidarr_added"] += 1
+        else:
+            self.ratings_cache.increment_push_attempt(artist)
+            self.stats["lidarr_push_failed"] += 1
 
     def _check_run_cooldown(self) -> bool:
         """Check if enough time has passed since last run with smart service-based cooldown.
@@ -1843,8 +1855,9 @@ CRITICAL RULES:
                             self.stats.get("fiesta_skipped", 0))
             if self.config["lidarr"]["enabled"]:
                 logger.info(
-                    "Lidarr bridge: added %d new artists, tracking %d below threshold",
+                    "Lidarr bridge: added %d new artists, %d push failures, tracking %d below threshold",
                     self.stats.get("lidarr_added", 0),
+                    self.stats.get("lidarr_push_failed", 0),
                     self.stats.get("lidarr_below_threshold", 0),
                 )
             logger.info("=" * 70)

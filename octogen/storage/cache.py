@@ -60,10 +60,7 @@ class RatingsCache:
                     push_attempt_count INTEGER NOT NULL DEFAULT 0
                 )
             """)
-            # Idempotent migration for DBs created before push_attempt_count
-            # existed in CREATE TABLE. Only swallow the expected
-            # "duplicate column" error; any other OperationalError signals a
-            # real schema/IO problem and must surface.
+            # Idempotent: column may already exist on pre-existing DBs.
             try:
                 conn.execute(
                     "ALTER TABLE missing_artists ADD COLUMN "

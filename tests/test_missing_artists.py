@@ -98,3 +98,28 @@ class TestPushAttemptCap:
             cache.record_missing_track("Foo Fighters")
         cache.increment_push_attempt("Foo Fighters")
         assert cache.get_pending_pushes(threshold=3, max_attempts=5) == ["Foo Fighters"]
+
+
+class TestMigration:
+    """Pre-existing DBs created before push_attempt_count must be upgraded
+    in place rather than crashing the engine at startup."""
+
+    def test_legacy_db_without_push_attempt_count_is_migrated(self, tmp_path):
+        db_path = tmp_path / "legacy.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """CREATE TABLE missing_artists (
+                    artist TEXT PRIMARY KEY,
+                    artist_display TEXT NOT NULL,
+                    missing_count INTEGER NOT NULL DEFAULT 0,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    pushed_to_lidarr TEXT
+                )"""
+            )
+            conn.commit()
+
+        cache = RatingsCache(db_path)  # must not raise
+
+        assert cache.record_missing_track("Foo Fighters") == 1
+        assert cache.increment_push_attempt("Foo Fighters") == 1

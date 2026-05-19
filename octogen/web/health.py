@@ -351,8 +351,6 @@ def check_lidarr() -> Dict[str, Any]:
                 "healthy": False
             }
 
-        # Normalize trailing slash to mirror LidarrClient.url and avoid
-        # accidental "//api/v1/..." paths.
         url = url.rstrip("/")
 
         response = requests.get(

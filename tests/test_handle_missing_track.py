@@ -18,7 +18,12 @@ def _engine_with(cache, lidarr=None, octo=None, min_missing=3):
     engine.lidarr = lidarr
     engine.octo = octo
     engine.config = {"lidarr": {"min_missing": min_missing}}
-    engine.stats = {"lidarr_added": 0, "lidarr_below_threshold": 0, "fiesta_skipped": 0}
+    engine.stats = {
+        "lidarr_added": 0,
+        "lidarr_below_threshold": 0,
+        "lidarr_push_failed": 0,
+        "fiesta_skipped": 0,
+    }
     return engine
 
 
@@ -71,6 +76,7 @@ def test_lidarr_failure_does_not_mark_pushed_or_count_added(cache):
 
     lidarr.add_artist.assert_called_once()
     assert engine.stats["lidarr_added"] == 0
+    assert engine.stats["lidarr_push_failed"] == 1
     assert cache.get_pending_pushes(threshold=3) == ["Foo Fighters"]
 
 

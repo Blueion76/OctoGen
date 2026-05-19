@@ -5,7 +5,7 @@ add operations are caught at the call site and never block playlist generation.
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import requests
 from requests.exceptions import RequestException
@@ -108,14 +108,11 @@ class LidarrClient:
 
     # -- add artist ---------------------------------------------------------
 
-    def add_artist(self, artist_name: str) -> tuple:
+    def add_artist(self, artist_name: str) -> Tuple[bool, str]:
         """Look up artist in MusicBrainz via Lidarr, then add it.
 
-        Returns (success: bool, message: str). Never raises — call site
-        treats this as a side effect of playlist generation.
-        Catches RequestException (network), ValueError (non-JSON body), and
-        KeyError (missing foreignArtistId in lookup result) to uphold the
-        never-raises contract.
+        Returns (success, message). Never raises — call sites treat this as
+        a side effect of playlist generation.
         """
         missing = [
             name for name, value in (
@@ -177,5 +174,7 @@ class LidarrClient:
             return True, "added"
 
         except (RequestException, ValueError, KeyError) as e:
-            logger.warning("Lidarr add %s error: %s", artist_name, e)
+            logger.warning(
+                "Lidarr add %s error: %s", artist_name, e, exc_info=True,
+            )
             return False, str(e)
