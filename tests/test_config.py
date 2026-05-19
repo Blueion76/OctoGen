@@ -242,3 +242,33 @@ class TestCleanupOtherPeriodPlaylists:
         engine.nd.get_all_playlists.side_effect = RuntimeError("boom")
         engine._cleanup_other_period_playlists("Morning Mix")
         engine.nd.delete_playlist.assert_not_called()
+
+    def test_per_iteration_delete_failure_does_not_abort_loop(self):
+        """A single delete raising should not skip the remaining periods."""
+        engine = self._make_engine(
+            persist=False,
+            existing=[
+                {"id": "1", "name": "Morning Mix"},
+                {"id": "2", "name": "Afternoon Flow"},
+                {"id": "3", "name": "Night Vibes"},
+            ],
+        )
+        engine.nd.delete_playlist.side_effect = [RuntimeError("nope"), True, True]
+        engine._cleanup_other_period_playlists("Evening Chill")
+        # All three deletes attempted despite the first one raising.
+        assert engine.nd.delete_playlist.call_count == 3
+
+
+class TestPeriodPatternsMatchScheduler:
+    """Drift-guard: _PERIOD_PLAYLIST_PATTERNS must equal the names produced
+    by octogen.scheduler.timeofday.get_period_display_name(). If a period is
+    renamed in one place but not the other, cleanup silently no-ops on the
+    renamed playlist forever."""
+
+    def test_patterns_match_scheduler_names(self):
+        from octogen.scheduler.timeofday import get_period_display_name
+        scheduler_names = {
+            get_period_display_name(p)
+            for p in ("morning", "afternoon", "evening", "night")
+        }
+        assert set(OctoGenEngine._PERIOD_PLAYLIST_PATTERNS) == scheduler_names

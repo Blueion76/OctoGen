@@ -120,8 +120,8 @@ class PlaylistsConfig(BaseModel):
             "When False, generating a new time-of-day playlist deletes the "
             "other three (Morning Mix / Afternoon Flow / Evening Chill / "
             "Night Vibes) so only the current period's playlist exists. "
-            "When True, all four persist and the current period's playlist "
-            "is updated in place on each run."
+            "When True, all four persist; the current period's playlist is "
+            "still deleted-and-recreated on each run (its id changes)."
         ),
     )
 

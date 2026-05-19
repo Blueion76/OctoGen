@@ -627,7 +627,8 @@ TIMEOFDAY_PLAYLISTS_PERSIST=true
 ```
 **Notes**:
 - Default (`false`): only the current period's playlist exists at any time; the other three are deleted when a new period generates
-- When `true`: Morning Mix, Afternoon Flow, Evening Chill, and Night Vibes all persist; the current period's playlist is still updated in place on each scheduled run
+- When `true`: Morning Mix, Afternoon Flow, Evening Chill, and Night Vibes all persist; the current period's playlist is still deleted-and-recreated on each scheduled run (its playlist id changes)
+- Pre-existing period playlists are not retroactively repopulated when this flag is first enabled
 - Useful if you want a stable set of mood playlists pinned in your client rather than a single rotating one
 
 ---
@@ -1385,7 +1386,7 @@ docker logs octogen | grep "Timezone:"
 | **Scheduling** | 2 | SCHEDULE_CRON, TZ, MIN_RUN_INTERVAL_HOURS |
 | **Monitoring** | 4 | METRICS_ENABLED, METRICS_PORT, CIRCUIT_BREAKER_THRESHOLD, CIRCUIT_BREAKER_TIMEOUT |
 | **Web UI** | 2 | WEB_ENABLED, WEB_PORT |
-| **Time-of-Day** | 11 | TIMEOFDAY_ENABLED, TIMEOFDAY_*_START, TIMEOFDAY_*_END, TIMEOFDAY_PLAYLIST_SIZE, TIMEOFDAY_REFRESH_ON_PERIOD_CHANGE |
+| **Time-of-Day** | 12 | TIMEOFDAY_ENABLED, TIMEOFDAY_*_START, TIMEOFDAY_*_END, TIMEOFDAY_PLAYLIST_SIZE, TIMEOFDAY_PLAYLISTS_PERSIST, TIMEOFDAY_REFRESH_ON_PERIOD_CHANGE |
 | **Batch Processing** | 2 | DOWNLOAD_BATCH_SIZE, DOWNLOAD_CONCURRENCY |
 | **Logging** | 2 | LOG_FORMAT, SHOW_PROGRESS |
 | **Templates** | 1 | PLAYLIST_TEMPLATES_FILE |
