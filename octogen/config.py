@@ -81,7 +81,7 @@ def load_config_from_env() -> Dict:
             "url": load_secret("LIDARR_URL"),
             "api_key": load_secret("LIDARR_API_KEY"),
             "min_missing": int(os.getenv("LIDARR_MIN_MISSING", "3")),
-            "add_monitored": os.getenv("LIDARR_ADD_MONITORED", "false").lower() == "true",
+            "add_monitored": os.getenv("LIDARR_ADD_MONITORED", "false").lower() in ("true", "1", "yes", "on"),
             "tag": os.getenv("LIDARR_TAG", "octogen"),
             "quality_profile": os.getenv("LIDARR_QUALITY_PROFILE"),
             "metadata_profile": os.getenv("LIDARR_METADATA_PROFILE"),

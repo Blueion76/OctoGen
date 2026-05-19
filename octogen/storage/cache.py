@@ -60,18 +60,15 @@ class RatingsCache:
                     push_attempt_count INTEGER NOT NULL DEFAULT 0
                 )
             """)
-            # Idempotent: column may already exist on pre-existing DBs.
-            try:
+            existing = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(missing_artists)")
+            }
+            if "push_attempt_count" not in existing:
                 conn.execute(
                     "ALTER TABLE missing_artists ADD COLUMN "
                     "push_attempt_count INTEGER NOT NULL DEFAULT 0"
                 )
-            except sqlite3.OperationalError as e:
-                if "duplicate column" not in str(e).lower():
-                    logger.error(
-                        "missing_artists migration failed: %s", e, exc_info=True,
-                    )
-                    raise
             conn.commit()
 
     def get_last_scan_date(self) -> Optional[str]:
@@ -158,25 +155,17 @@ class RatingsCache:
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT missing_count FROM missing_artists WHERE artist=?",
-                (key,),
+                """INSERT INTO missing_artists
+                   (artist, artist_display, missing_count, first_seen, last_seen)
+                   VALUES (?, ?, 1, ?, ?)
+                   ON CONFLICT(artist) DO UPDATE SET
+                     missing_count = missing_count + 1,
+                     last_seen = excluded.last_seen
+                   RETURNING missing_count""",
+                (key, display, now, now),
             ).fetchone()
-            if row:
-                new_count = row[0] + 1
-                conn.execute(
-                    "UPDATE missing_artists SET missing_count=?, last_seen=? WHERE artist=?",
-                    (new_count, now, key),
-                )
-            else:
-                new_count = 1
-                conn.execute(
-                    """INSERT INTO missing_artists
-                       (artist, artist_display, missing_count, first_seen, last_seen)
-                       VALUES (?, ?, 1, ?, ?)""",
-                    (key, display, now, now),
-                )
             conn.commit()
-        return new_count
+        return row[0]
 
     def mark_pushed(self, artist: str) -> None:
         """Mark an artist as pushed to Lidarr."""
@@ -203,7 +192,13 @@ class RatingsCache:
                 (key,),
             ).fetchone()
             conn.commit()
-        return row[0] if row else 0
+        if row is None:
+            logger.warning(
+                "increment_push_attempt called for unknown artist %r — no row updated",
+                artist,
+            )
+            return 0
+        return row[0]
 
     def get_pending_pushes(self, threshold: int, max_attempts: int = 5) -> List[str]:
         """Return display names of artists at/above threshold, not yet pushed,

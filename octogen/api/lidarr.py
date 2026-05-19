@@ -173,7 +173,13 @@ class LidarrClient:
             logger.info("Lidarr: added %s", artist_name)
             return True, "added"
 
-        except (RequestException, ValueError, KeyError) as e:
+        except ValueError as e:
+            logger.warning(
+                "Lidarr add %s: invalid JSON response: %s",
+                artist_name, e, exc_info=True,
+            )
+            return False, f"invalid JSON response: {e}"
+        except (RequestException, KeyError) as e:
             logger.warning(
                 "Lidarr add %s error: %s", artist_name, e, exc_info=True,
             )
