@@ -155,3 +155,132 @@ class TestHybridDailyMixWithoutOctoFiesta:
         )
         assert len(songs) == 30
         engine._generate_llm_songs_for_daily_mix.assert_called_once()
+
+
+class TestTimeOfDayPlaylistsPersist:
+    """Tests for the TIMEOFDAY_PLAYLISTS_PERSIST toggle."""
+
+    def test_default_is_false(self):
+        """When unset, the toggle defaults to False (preserve existing behavior)."""
+        env = {**_REQUIRED_ENV}
+        env.pop("TIMEOFDAY_PLAYLISTS_PERSIST", None)
+        with patch.dict(os.environ, env, clear=True):
+            config = load_config_from_env()
+        assert config["playlists"]["time_of_day_persist"] is False
+
+    def test_true(self):
+        """`true` enables persistence."""
+        with patch.dict(
+            os.environ,
+            {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": "true"},
+        ):
+            config = load_config_from_env()
+        assert config["playlists"]["time_of_day_persist"] is True
+
+    def test_false_explicit(self):
+        """Explicit `false` keeps it disabled."""
+        with patch.dict(
+            os.environ,
+            {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": "false"},
+        ):
+            config = load_config_from_env()
+        assert config["playlists"]["time_of_day_persist"] is False
+
+    def test_truthy_aliases_enable(self):
+        """Other truthy aliases (1, yes, on) also enable, matching project convention."""
+        for value in ("1", "yes", "on", "YES", "On"):
+            with patch.dict(
+                os.environ,
+                {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": value},
+            ):
+                config = load_config_from_env()
+            assert config["playlists"]["time_of_day_persist"] is True, (
+                f"expected {value!r} to enable persistence"
+            )
+
+    def test_unknown_value_treated_as_false(self):
+        """A value outside the truthy set (e.g. 'maybe') is False."""
+        with patch.dict(
+            os.environ,
+            {**_REQUIRED_ENV, "TIMEOFDAY_PLAYLISTS_PERSIST": "maybe"},
+        ):
+            config = load_config_from_env()
+        assert config["playlists"]["time_of_day_persist"] is False
+
+
+class TestCleanupOtherPeriodPlaylists:
+    """Tests for the _cleanup_other_period_playlists gating helper."""
+
+    @staticmethod
+    def _make_engine(persist: bool, existing: list[dict]) -> OctoGenEngine:
+        """Build an engine instance with just enough state for the helper."""
+        engine = OctoGenEngine.__new__(OctoGenEngine)
+        engine.config = {"playlists": {"time_of_day_persist": persist}}
+        engine.nd = MagicMock()
+        engine.nd.get_all_playlists.return_value = existing
+        return engine
+
+    def test_persist_true_skips_delete(self):
+        """When the toggle is on, no delete calls fire even if old periods exist."""
+        engine = self._make_engine(
+            persist=True,
+            existing=[
+                {"id": "1", "name": "Morning Mix"},
+                {"id": "2", "name": "Afternoon Flow"},
+            ],
+        )
+        engine._cleanup_other_period_playlists("Evening Chill")
+        engine.nd.get_all_playlists.assert_not_called()
+        engine.nd.delete_playlist.assert_not_called()
+
+    def test_persist_false_deletes_only_other_periods(self):
+        """Default behavior: delete other period playlists, never the current one."""
+        engine = self._make_engine(
+            persist=False,
+            existing=[
+                {"id": "1", "name": "Morning Mix"},
+                {"id": "2", "name": "Afternoon Flow"},
+                {"id": "3", "name": "Evening Chill"},  # current
+                {"id": "4", "name": "My Hand-Curated Mix"},
+            ],
+        )
+        engine._cleanup_other_period_playlists("Evening Chill")
+        deleted_ids = [c.args[0] for c in engine.nd.delete_playlist.call_args_list]
+        assert sorted(deleted_ids) == ["1", "2"]
+
+    def test_persist_false_swallows_errors(self):
+        """A failure listing playlists is logged but never raised."""
+        engine = self._make_engine(persist=False, existing=[])
+        engine.nd.get_all_playlists.side_effect = RuntimeError("boom")
+        engine._cleanup_other_period_playlists("Morning Mix")
+        engine.nd.delete_playlist.assert_not_called()
+
+    def test_per_iteration_delete_failure_does_not_abort_loop(self):
+        """A single delete raising should not skip the remaining periods."""
+        engine = self._make_engine(
+            persist=False,
+            existing=[
+                {"id": "1", "name": "Morning Mix"},
+                {"id": "2", "name": "Afternoon Flow"},
+                {"id": "3", "name": "Night Vibes"},
+            ],
+        )
+        engine.nd.delete_playlist.side_effect = [RuntimeError("nope"), True, True]
+        engine._cleanup_other_period_playlists("Evening Chill")
+        # All three deletes attempted despite the first one raising.
+        assert engine.nd.delete_playlist.call_count == 3
+
+
+class TestPeriodPatternsMatchScheduler:
+    """Drift-guard: _PERIOD_PLAYLIST_PATTERNS must equal the names produced
+    by octogen.scheduler.timeofday.get_period_display_name(). If a period is
+    renamed in one place but not the other, cleanup silently no-ops on the
+    renamed playlist forever."""
+
+    def test_patterns_match_scheduler_names(self):
+        from octogen.scheduler.timeofday import get_period_display_name
+        scheduler_names = {
+            get_period_display_name(p)
+            for p in ("morning", "afternoon", "evening", "night")
+        }
+        assert set(OctoGenEngine._PERIOD_PLAYLIST_PATTERNS) == scheduler_names

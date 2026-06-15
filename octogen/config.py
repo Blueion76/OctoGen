@@ -10,7 +10,7 @@ from octogen.utils.secrets import load_secret
 from octogen.models.config_models import (
     OctoGenConfig, NavidromeConfig, OctoFiestaConfig, AIConfig,
     LastFMConfig, ListenBrainzConfig, AudioMuseConfig,
-    SpotifyConfig, DeezerConfig,
+    SpotifyConfig, DeezerConfig, PlaylistsConfig,
     PerformanceConfig, SchedulingConfig, MonitoringConfig,
     WebUIConfig, LoggingConfig
 )
@@ -99,6 +99,11 @@ def load_config_from_env() -> Dict:
             "enabled": os.getenv("DEEZER_IMPORT_ENABLED", "false").lower() == "true",
             "playlist_urls": os.getenv("DEEZER_PLAYLIST_URLS", ""),
         },
+        "playlists": {
+            "time_of_day_persist": os.getenv(
+                "TIMEOFDAY_PLAYLISTS_PERSIST", "false"
+            ).lower() in ("true", "1", "yes", "on"),
+        },
         "performance": {
             "album_batch_size": int(os.getenv("ALBUM_BATCH_SIZE", "500")),
             "max_albums_scan": int(os.getenv("MAX_ALBUMS_SCAN", "10000")),
@@ -152,6 +157,7 @@ def validate_config(config: Dict) -> Optional[OctoGenConfig]:
             audiomuse=AudioMuseConfig(**config["audiomuse"]) if config["audiomuse"]["enabled"] else None,
             spotify=SpotifyConfig(**config["spotify"]) if config.get("spotify", {}).get("enabled") else None,
             deezer=DeezerConfig(**config["deezer"]) if config.get("deezer", {}).get("enabled") else None,
+            playlists=PlaylistsConfig(**config.get("playlists", {})),
             performance=PerformanceConfig(**config["performance"]),
             scheduling=SchedulingConfig(**config["scheduling"]),
             monitoring=MonitoringConfig(**config["monitoring"]),

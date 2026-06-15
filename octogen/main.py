@@ -297,6 +297,11 @@ class OctoGenEngine:
                 "enabled": self._get_env_bool("DEEZER_IMPORT_ENABLED", False),
                 "playlist_urls": os.getenv("DEEZER_PLAYLIST_URLS", ""),
             },
+            "playlists": {
+                "time_of_day_persist": self._get_env_bool(
+                    "TIMEOFDAY_PLAYLISTS_PERSIST", False
+                ),
+            },
         }
 
         # Log configuration (without secrets)
@@ -327,6 +332,51 @@ class OctoGenEngine:
             return int(os.getenv(key, str(default)))
         except ValueError:
             return default
+
+    _PERIOD_PLAYLIST_PATTERNS = frozenset({
+        "Morning Mix", "Afternoon Flow", "Evening Chill", "Night Vibes",
+    })
+
+    def _cleanup_other_period_playlists(self, current_playlist_name: str) -> None:
+        """Skipped when ``playlists.time_of_day_persist`` is True so all four
+        period playlists coexist; the current period's playlist is still
+        deleted-and-recreated by ``nd.create_playlist`` later in the flow
+        (its playlist id changes on every run).
+        """
+        if self.config["playlists"]["time_of_day_persist"]:
+            logger.info(
+                "🔒 Time-of-day playlist persistence enabled, keeping other periods"
+            )
+            return
+
+        try:
+            all_playlists_in_navidrome = self.nd.get_all_playlists()
+        except Exception as e:
+            logger.warning("Could not list playlists for period cleanup: %s", e)
+            return
+
+        for nd_playlist in all_playlists_in_navidrome:
+            nd_playlist_name = nd_playlist.get("name", "")
+            if (
+                nd_playlist_name not in self._PERIOD_PLAYLIST_PATTERNS
+                or nd_playlist_name == current_playlist_name
+            ):
+                continue
+            playlist_id = nd_playlist.get("id")
+            if not playlist_id:
+                continue
+            logger.info("🗑️  Deleting old period playlist: %s", nd_playlist_name)
+            try:
+                if not self.nd.delete_playlist(playlist_id):
+                    logger.warning(
+                        "delete_playlist returned False for %s (id: %s)",
+                        nd_playlist_name, playlist_id,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Failed to delete period playlist %s (id: %s): %s",
+                    nd_playlist_name, playlist_id, e,
+                )
 
     def _validate_env_config(self) -> None:
         """Validate environment configuration"""
@@ -1537,21 +1587,7 @@ CRITICAL RULES:
                     logger.info(f"Playlist: {playlist_name}")
                     logger.info(f"Reason: {reason}")
                     
-                    # Delete old period playlists first
-                    try:
-                        all_playlists_in_navidrome = self.nd.get_all_playlists()
-                        period_patterns = ["Morning Mix", "Afternoon Flow", "Evening Chill", "Night Vibes"]
-                        
-                        for nd_playlist in all_playlists_in_navidrome:
-                            nd_playlist_name = nd_playlist.get("name", "")
-                            # Delete if it's a time-period playlist but not the current one
-                            if any(pattern in nd_playlist_name for pattern in period_patterns) and nd_playlist_name != playlist_name:
-                                playlist_id = nd_playlist.get("id")
-                                if playlist_id:
-                                    logger.info(f"🗑️  Deleting old period playlist: {nd_playlist_name}")
-                                    self.nd.delete_playlist(playlist_id)
-                    except Exception as e:
-                        logger.warning(f"Could not delete old period playlists: {e}")
+                    self._cleanup_other_period_playlists(playlist_name)
                     
                     # Generate the time-period playlist
                     # Use AudioMuse for 25 songs, LLM for 5 songs
